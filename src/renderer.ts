@@ -45,6 +45,7 @@ export class CanvasRenderer {
   private raf = 0;
   private renderRaf = 0;
   private lastFrame = 0;
+  private backgroundColor = '#000000';
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly runoffCanvas: HTMLCanvasElement) {
     const baseGl = canvas.getContext('webgl2', { alpha: false, antialias: true, preserveDrawingBuffer: true });
@@ -128,14 +129,14 @@ export class CanvasRenderer {
     return framebuffer;
   }
 
-  resize(width: number, height: number, dpr: number): void {
+  resize(width: number, height: number, dpr: number, displayWidth = width, displayHeight = height): void {
     this.width = Math.max(width, 1); this.height = Math.max(height, 1);
     const backingWidth = Math.max(1, Math.round(width * dpr));
     const backingHeight = Math.max(1, Math.round(height * dpr));
     this.canvas.width = backingWidth; this.canvas.height = backingHeight;
     this.runoffCanvas.width = backingWidth; this.runoffCanvas.height = backingHeight;
-    this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`;
-    this.runoffCanvas.style.width = `${width}px`; this.runoffCanvas.style.height = `${height}px`;
+    this.canvas.style.width = `${displayWidth}px`; this.canvas.style.height = `${displayHeight}px`;
+    this.runoffCanvas.style.width = `${displayWidth}px`; this.runoffCanvas.style.height = `${displayHeight}px`;
     const gl = this.baseGl;
     gl.bindTexture(gl.TEXTURE_2D, this.baseTexture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, backingWidth, backingHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -144,6 +145,11 @@ export class CanvasRenderer {
   }
 
   setRunIntensity(value: number): void { this.runoffEngine.setIntensity(value); }
+
+  setBackgroundColor(color: string): void {
+    this.backgroundColor = color;
+    this.replayBase();
+  }
 
   setActive(stroke: Stroke | null, newDabs: Dab[] = []): void {
     this.active = stroke;
@@ -187,7 +193,7 @@ export class CanvasRenderer {
     const gl = this.baseGl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.baseFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(...this.parseColor(this.backgroundColor), 1); gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
   private replayBase(): void {
@@ -303,7 +309,7 @@ export class CanvasRenderer {
 
 export function pointerPosition(event: PointerEvent, canvas: HTMLCanvasElement, logicalWidth: number, logicalHeight: number): Point {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = rect.width > 0 ? logicalWidth / rect.width : 1;
-  const scaleY = rect.height > 0 ? logicalHeight / rect.height : 1;
+  const scaleX = rect.width > 0 ? logicalWidth / rect.width : 0;
+  const scaleY = rect.height > 0 ? logicalHeight / rect.height : 0;
   return { x: (event.clientX - rect.left) * scaleX, y: (event.clientY - rect.top) * scaleY };
 }

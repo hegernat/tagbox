@@ -52,11 +52,14 @@
             <div class="range-ends"><span>Low</span><span>High</span></div>
           </div>
           <div class="tool-group color-group">
-            <div class="control-label"><label for="brush-color">Color</label><span class="color-hex" id="color-value">#FFFFFF</span></div>
-            <div class="color-control"><span class="color-swatch" id="color-swatch"></span><input id="brush-color" type="color" value="#ffffff" aria-label="Välj penselfärg" /><span class="color-name">Custom color</span><span class="chevron">↗</span></div>
-            <div class="swatches" aria-label="Snabbval för färg">
-              <button class="swatch active" type="button" data-color="#ffffff" aria-label="Vit" style="--swatch:#ffffff"></button><button class="swatch" type="button" data-color="#d9ff00" aria-label="Syra" style="--swatch:#d9ff00"></button><button class="swatch" type="button" data-color="#ff4d29" aria-label="Korall" style="--swatch:#ff4d29"></button><button class="swatch" type="button" data-color="#a77bff" aria-label="Lila" style="--swatch:#a77bff"></button><button class="swatch" type="button" data-color="#32d6c3" aria-label="Turkos" style="--swatch:#32d6c3"></button>
-            </div>
+            <div class="control-label"><label for="brush-color">Brush color</label><span class="color-hex" id="color-value">#FFFFFF</span></div>
+            <div class="color-control"><span class="color-swatch" id="color-swatch"></span><input id="brush-color" type="color" value="#ffffff" aria-label="Choose brush color" /><span class="color-name">Custom color</span><span class="chevron">↗</span></div>
+            <div id="preset-palette" class="swatches" aria-label="Preset brush colors"></div>
+            <div class="saved-palette-row"><span class="palette-label">Saved</span><div id="saved-palette" class="swatches saved-palette" aria-label="Saved brush colors"></div><button id="save-color-button" class="save-color-button" type="button" title="Save current brush color">+</button></div>
+          </div>
+          <div class="tool-group background-group">
+            <div class="control-label"><label for="canvas-background">Canvas background</label><span class="color-hex">Artwork</span></div>
+            <div class="color-control"><span class="background-color-swatch"></span><input id="canvas-background" type="color" value="#000000" aria-label="Choose canvas background color" /><span class="color-name">Background color</span><span class="chevron">↗</span></div>
           </div>
           <div class="tool-spacer"></div>
           <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button><div class="tool-footer"><span>TAGBOX STUDIO</span><span>v0.1</span></div></div>
