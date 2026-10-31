@@ -1,0 +1,13 @@
+services:
+  tagbox:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: tagbox
+    restart: unless-stopped
+    networks:
+      - kebabstugan_default
+
+networks:
+  kebabstugan_default:
+    external: true

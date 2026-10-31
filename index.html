@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#090a0b" />
+    <title>Tagbox — Studio</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Tagbox startsida"><span class="brand-mark">t</span><span>TAGBOX</span></a>
+        <div class="document-name"><span class="live-dot"></span> Untitled canvas <span class="saved-label">· All changes saved</span></div>
+        <div class="top-actions"><span class="workspace-label">STUDIO / 01</span><button id="canvas-mode-button" class="mode-button" type="button">Canvas Only</button><button id="clear-button" class="icon-button clear-button" type="button" title="Töm canvas" aria-label="Töm canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+      </header>
+      <main class="workspace">
+        <section class="canvas-stage" aria-label="Rityta">
+          <canvas id="paint-canvas" aria-label="Rityta, dra med musen för att måla"></canvas>
+          <canvas id="runoff-canvas" class="runoff-layer" aria-hidden="true"></canvas>
+          <div class="canvas-hud"><span class="hud-item"><span class="hud-key">DRAG</span> Paint</span><span class="hud-divider"></span><span class="hud-item"><span class="hud-key">⌘ Z</span> Undo</span></div>
+          <div class="canvas-index">CANVAS <span>01</span></div>
+          <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Tillbaka till Studio">Studio <kbd>Esc</kbd></button>
+        </section>
+        <aside class="toolbar" aria-label="Penselinställningar">
+          <div class="tool-section tool-heading"><span class="section-kicker">TOOLS</span><span class="section-count">01 — 03</span></div>
+          <div class="tool-group brush-shape-group">
+            <div class="control-label"><span class="shape-label">Brush tip</span></div>
+            <div class="brush-shape-picker" role="group" aria-label="Välj penselspets">
+              <button class="brush-shape-option active" type="button" data-shape="round" aria-label="Round penselspets" aria-pressed="true"><span class="shape-icon round-icon" aria-hidden="true"></span><span>Round</span></button>
+              <button class="brush-shape-option" type="button" data-shape="square" aria-label="Square penselspets" aria-pressed="false"><span class="shape-icon square-icon" aria-hidden="true"></span><span>Square</span></button>
+              <button class="brush-shape-option" type="button" data-shape="chisel" aria-label="Chisel penselspets" aria-pressed="false"><span class="shape-icon chisel-icon" aria-hidden="true"></span><span>Chisel</span></button>
+            </div>
+          </div>
+          <div class="tool-group">
+            <div class="control-label"><label for="brush-size">Brush size</label><output id="size-value" for="brush-size">10 px</output></div>
+            <input id="brush-size" class="range-input" type="range" min="2" max="96" value="10" />
+            <div class="range-ends"><span>2</span><span>96</span></div>
+          </div>
+          <div class="tool-group smoothing-group">
+            <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">45%</output></div>
+            <input id="smoothing" class="range-input" type="range" min="0" max="25" value="12" />
+            <div class="range-ends"><span>Raw</span><span>Steady</span></div>
+          </div>
+          <div class="tool-group wet-group">
+            <div class="control-label"><label for="wetness">Paint load</label><output id="wetness-value" for="wetness">68%</output></div>
+            <input id="wetness" class="range-input" type="range" min="15" max="100" value="68" />
+            <div class="range-ends"><span>Dry</span><span>Wet</span></div>
+          </div>
+          <div class="tool-group intensity-group">
+            <div class="control-label"><label for="run-intensity">Run intensity</label><output id="run-intensity-value" for="run-intensity">58%</output></div>
+            <input id="run-intensity" class="range-input" type="range" min="0" max="100" value="58" />
+            <div class="range-ends"><span>Low</span><span>High</span></div>
+          </div>
+          <div class="tool-group color-group">
+            <div class="control-label"><label for="brush-color">Color</label><span class="color-hex" id="color-value">#FFFFFF</span></div>
+            <div class="color-control"><span class="color-swatch" id="color-swatch"></span><input id="brush-color" type="color" value="#ffffff" aria-label="Välj penselfärg" /><span class="color-name">Custom color</span><span class="chevron">↗</span></div>
+            <div class="swatches" aria-label="Snabbval för färg">
+              <button class="swatch active" type="button" data-color="#ffffff" aria-label="Vit" style="--swatch:#ffffff"></button><button class="swatch" type="button" data-color="#d9ff00" aria-label="Syra" style="--swatch:#d9ff00"></button><button class="swatch" type="button" data-color="#ff4d29" aria-label="Korall" style="--swatch:#ff4d29"></button><button class="swatch" type="button" data-color="#a77bff" aria-label="Lila" style="--swatch:#a77bff"></button><button class="swatch" type="button" data-color="#32d6c3" aria-label="Turkos" style="--swatch:#32d6c3"></button>
+            </div>
+          </div>
+          <div class="tool-spacer"></div>
+          <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button><div class="tool-footer"><span>TAGBOX STUDIO</span><span>v0.1</span></div></div>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
