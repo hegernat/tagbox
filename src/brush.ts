@@ -1,5 +1,5 @@
 import { PointerFilter, StrokeInterpolator } from './smoothing';
-import type { BrushShape, Dab, Point, Stroke } from './settings';
+import type { BrushShape, Dab, Material, Point, Stroke } from './settings';
 
 const DEFAULT_CHISEL_ROTATION = Math.PI / 6;
 
@@ -15,11 +15,11 @@ export class BrushEngine {
 
   constructor(private readonly onChange: (stroke: Stroke, newDabs: Dab[]) => void) {}
 
-  begin(point: Point, time: number, size: number, color: string, smoothing: number, wetness: number, shape: BrushShape = 'round'): void {
+  begin(point: Point, time: number, size: number, color: string, smoothing: number, wetness: number, shape: BrushShape = 'round', material: Material = 'paint'): void {
     // Store orientation on the stroke so later rotation controls can override it
     // without tying the nib to pointer motion.
     const rotation = shape === 'chisel' ? DEFAULT_CHISEL_ROTATION : 0;
-    this.active = { points: [point], dabs: [], size, color, shape, rotation };
+    this.active = { points: [point], dabs: [], size, color, material, shape, rotation };
     this.filter = new PointerFilter(smoothing);
     this.interpolator = new StrokeInterpolator(Math.max(0.7, size * 0.12));
     this.lastRaw = { ...point };

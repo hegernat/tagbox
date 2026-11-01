@@ -15,6 +15,7 @@ const intensityInput = document.querySelector<HTMLInputElement>('#run-intensity'
 const colorInput = document.querySelector<HTMLInputElement>('#brush-color')!;
 const backgroundInput = document.querySelector<HTMLInputElement>('#canvas-background')!;
 const presetPalette = document.querySelector<HTMLElement>('#preset-palette')!;
+const materialPalette = document.querySelector<HTMLElement>('#material-palette')!;
 const savedPalette = document.querySelector<HTMLElement>('#saved-palette')!;
 const saveColorButton = document.querySelector<HTMLButtonElement>('#save-color-button')!;
 const undoButton = document.querySelector<HTMLButtonElement>('#undo-button')!;
@@ -43,7 +44,7 @@ canvas.addEventListener('pointerdown', (event) => {
   canvas.setPointerCapture(event.pointerId);
   isDrawing = true;
   activePointerId = event.pointerId;
-  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape);
+  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material);
   holdTimer = window.setInterval(() => { if (isDrawing) brush.hold(); }, 60);
 });
 canvas.addEventListener('pointermove', (event) => {
@@ -119,6 +120,7 @@ const presetColors = [
   '#ff6b6b', '#ff9f1c', '#ffd166', '#06d6a0', '#118ab2', '#4361ee', '#f72585', '#8d5a3b',
 ];
 const brushColorKey = 'tagbox.brush-color';
+const brushMaterialKey = 'tagbox.brush-material';
 const savedColorsKey = 'tagbox.saved-colors';
 const backgroundColorKey = 'tagbox.canvas-background';
 const validColor = (color: string): boolean => /^#[0-9a-f]{6}$/i.test(color);
@@ -129,16 +131,29 @@ function readSavedColors(): string[] {
   } catch { return []; }
 }
 let savedColors = readSavedColors();
-function setColor(color: string): void {
+function setColor(color: string, selectPaint = true): void {
   if (!validColor(color)) return;
   color = color.toLowerCase();
   settings.color = color;
+  if (selectPaint) {
+    settings.material = 'paint';
+    try { localStorage.setItem(brushMaterialKey, 'paint'); } catch { /* Drawing remains available when storage is disabled. */ }
+  }
   colorInput.value = color;
   document.querySelector('#color-value')!.textContent = color.toUpperCase();
   document.querySelector<HTMLElement>('#color-swatch')!.style.backgroundColor = color;
   try { localStorage.setItem(brushColorKey, color); } catch { /* Drawing remains available when storage is disabled. */ }
   presetPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', swatch.dataset.color === color));
   savedPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', swatch.dataset.color === color));
+  updateMaterialPalette();
+}
+function updateMaterialPalette(): void {
+  materialPalette.querySelectorAll<HTMLButtonElement>('.material-swatch').forEach((button) => button.classList.toggle('active', button.dataset.material === settings.material));
+}
+function setMaterial(material: 'paint' | 'silver-chrome' | 'copper-chrome'): void {
+  settings.material = material;
+  try { localStorage.setItem(brushMaterialKey, material); } catch { /* Drawing remains available when storage is disabled. */ }
+  updateMaterialPalette();
 }
 function addSwatch(container: HTMLElement, color: string, removable = false): void {
   const wrapper = document.createElement('span');
@@ -165,12 +180,23 @@ function renderPalettes(): void {
   presetPalette.replaceChildren(); savedPalette.replaceChildren();
   presetColors.forEach((color) => addSwatch(presetPalette, color));
   savedColors.forEach((color) => addSwatch(savedPalette, color, true));
-  setColor(settings.color);
+  materialPalette.replaceChildren();
+  for (const [material, label, style] of [['silver-chrome', 'Silver Chrome', 'silver'], ['copper-chrome', 'Copper Chrome', 'copper']] as const) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = `material-swatch ${style}`; button.dataset.material = material; button.textContent = label;
+    button.setAttribute('aria-label', `Select ${label}`); button.addEventListener('click', () => setMaterial(material));
+    materialPalette.append(button);
+  }
+  setColor(settings.color, false);
 }
 try {
   const storedColor = localStorage.getItem(brushColorKey);
   if (storedColor && validColor(storedColor)) settings.color = storedColor.toLowerCase();
 } catch { /* Use the default brush color when storage is unavailable. */ }
+try {
+  const storedMaterial = localStorage.getItem(brushMaterialKey);
+  if (storedMaterial === 'silver-chrome' || storedMaterial === 'copper-chrome') settings.material = storedMaterial;
+} catch { /* Use ordinary paint when storage is unavailable. */ }
 renderPalettes();
 colorInput.addEventListener('input', () => setColor(colorInput.value));
 saveColorButton.addEventListener('click', () => {
