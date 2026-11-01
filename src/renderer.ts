@@ -16,11 +16,15 @@ void main(){
   float coverage=texture(u_mask,v_uv).a;
   if(coverage<=0.001) discard;
   vec2 uv=vec2(v_uv.x,1.0-v_uv.y);
-  float band=0.30+0.0375*smoothstep(0.08,0.30,sin(uv.y*6.283)*0.5+0.5)+0.0375*smoothstep(0.40,0.66,sin(uv.y*12.566+0.7)*0.5+0.5);
+  float band=0.34+0.075*smoothstep(0.08,0.30,sin(uv.y*6.283)*0.5+0.5)+0.068*smoothstep(0.40,0.66,sin(uv.y*12.566+0.7)*0.5+0.5)+0.018*sin(uv.y*18.85+uv.x*2.2);
   float key=exp(-pow((uv.x-0.22)/0.16,2.0))*smoothstep(0.06,0.23,uv.y)*(1.0-smoothstep(0.72,0.94,uv.y));
   float strip=exp(-pow((uv.x-0.72)/0.11,2.0))*smoothstep(0.10,0.29,uv.y)*(1.0-smoothstep(0.58,0.82,uv.y));
   float box=exp(-pow((uv.x-0.48)/0.23,2.0)-pow((uv.y-0.13)/0.15,2.0));
-  float value=clamp(band+0.15*key+0.107*strip+0.107*box,0.22,0.66);
+  float studio=exp(-pow((uv.x-0.36)/0.035,2.0))*(0.62+0.38*sin(uv.y*5.1+0.6)*0.5+0.19);
+  float rimLight=exp(-pow((uv.x-0.86)/0.028,2.0))*(0.55+0.45*smoothstep(0.08,0.82,sin(uv.y*8.4+1.1)*0.5+0.5));
+  float softbox=exp(-pow((uv.x-0.12)/0.022,2.0))*(0.68+0.32*sin(uv.y*4.4+0.8)*0.5+0.16);
+  float stripLight=exp(-pow((uv.x-0.59)/0.018,2.0))*(0.58+0.42*smoothstep(0.1,0.86,sin(uv.y*6.8+uv.x*1.7)*0.5+0.5));
+  float value=clamp(band+0.22*key+0.17*strip+0.14*box+0.075*studio+0.055*rimLight+0.075*softbox+0.06*stripLight,0.22,0.90);
 
   // Estimate the boundary normal from the already merged coverage. A short,
   // logical-pixel neighborhood keeps this rim independent of brush diameter.
@@ -38,7 +42,9 @@ void main(){
   float shadow=max(dot(normal,-lightDir),0.0)*rim;
 
   vec3 tint=u_material==2?vec3(0.96,0.56,0.36):vec3(0.86,0.90,0.94);
-  vec3 color=tint*value;
+  float highlightLevel=smoothstep(0.55,0.90,value);
+  vec3 reflection=u_material==2?vec3(1.0,0.72,0.50):vec3(1.0,1.0,1.0);
+  vec3 color=mix(tint*value,reflection*value,highlightLevel*0.72);
   color=color*(1.0-0.12*shadow)+vec3(0.085)*highlight;
   outColor=vec4(color,coverage);
 }`;
@@ -195,7 +201,7 @@ export class CanvasRenderer {
   setActive(stroke: Stroke | null, newDabs: Dab[] = []): void {
     this.active = stroke;
     if (!newDabs.length || !stroke) return;
-    this.runoffEngine.addDabs(stroke, newDabs, performance.now(), this.height);
+    this.runoffEngine.addDabs(stroke, newDabs, performance.now(), this.width, this.height);
     // Always queue visible stroke updates independently of the runoff animation loop.
     // The animation may already have a frame pending, but it is not responsible for
     // presenting newly received pointer dabs.

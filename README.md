@@ -1,106 +1,113 @@
 # Tagbox
 
-Tagbox is a browser-based graffiti painting application built with
-TypeScript, Vite and WebGL2. It provides a canvas-oriented workspace for
-creating freehand marks and experimenting with paint behavior, including
-simulated paint runoff and drips.
+Tagbox is a browser-based graffiti painting application built with TypeScript, Vite and WebGL2.
 
-**Live application:** https://tagbox.kebabstugan.com
+**Live application:** [tagbox.kebabstugan.com](https://tagbox.kebabstugan.com)
 
 ## Features
 
--   WebGL2-based canvas rendering
--   Freehand drawing with adjustable brush size
--   Round, square and chisel brush tips
--   Brush smoothing
--   Color selection
--   Undo and clear-canvas controls
--   Fullscreen / canvas-only mode
--   Simulated paint runoff, including individual drips and broader paint
-    sheets
--   Wet and dry paint behavior controls
--   Runoff intensity controls
-
-The application is under active development. Features and behavior may
-change.
+- Fixed 1920×1080 logical canvas with responsive display scaling.
+- Freehand painting with adjustable brush size.
+- Round, Square and Chisel brush tips, with interactive rotation for Square and Chisel.
+- Adjustable stroke smoothing.
+- Custom brush colors, 16 color presets and a saved color palette.
+- Configurable canvas background.
+- Silver Chrome and Copper Chrome materials with procedural metallic reflections and shared chrome-surface compositing.
+- Wet and Dry Paint behavior, adjustable runoff intensity and simulated paint drips.
+- Velocity-based paint splatter with an enable/disable setting; selected landed particles can create short secondary runoff.
+- Undo and clear-canvas controls, including Ctrl+Z and Cmd+Z shortcuts.
+- Fullscreen / Canvas Only mode, with mobile landscape orientation support where the browser allows it.
 
 ## Technology
 
--   TypeScript
--   Vite
--   WebGL2
--   GLSL shaders
+- TypeScript
+- Vite
+- WebGL2
+- GLSL shaders
+- HTML and CSS
 
 ## Development
 
-### Requirements
+### Prerequisites
 
--   Node.js
--   npm
--   A browser with WebGL2 support
+- Node.js 18 or newer
+- npm
+- A browser with WebGL2 support
 
-### Install dependencies
+Install dependencies and start the development server:
 
-``` bash
+```sh
 npm install
-```
-
-### Start the development server
-
-``` bash
 npm run dev
 ```
 
-Vite prints the local development URL in the terminal. To make the
-server accessible from other devices on your local network:
+Vite prints the local development URL, usually `http://localhost:5173`.
 
-``` bash
+To access the development server from another device on the LAN, bind Vite to all interfaces:
+
+```sh
 npm run dev -- --host 0.0.0.0
 ```
 
-### Create a production build
+Open the LAN address printed by Vite from the other device. Ensure the host firewall allows the development-server port.
 
-``` bash
+Create a production build with:
+
+```sh
 npm run build
 ```
 
-The production files are generated in `dist/`.
+The static production files are written to `dist/`.
 
 ## Deployment
 
-The production deployment uses Docker and Nginx to serve the contents of
-`dist/` as a static website. The current self-hosted deployment is
-connected to a Cloudflare Tunnel.
+The production image uses `deploy/Dockerfile` to serve the built `dist/` directory with Nginx, using `deploy/nginx.conf` for static-file and SPA fallback handling. Build the site before building the container image:
 
-To rebuild and restart the deployment from the project directory:
-
-``` bash
+```sh
 npm run build
-docker compose up -d --build
+docker compose build
 ```
 
-The included Compose configuration expects an existing external Docker
-network named `kebabstugan_default`. This is specific to the current
-self-hosted setup and must be adjusted if deploying elsewhere.
+The Compose service attaches to the external Docker network `kebabstugan_default`. Create that network before starting the service if it does not already exist:
+
+```sh
+docker network inspect kebabstugan_default >/dev/null 2>&1 || docker network create kebabstugan_default
+docker compose up -d
+```
+
+The Cloudflare Tunnel is external to this repository and is not started or configured by Compose. Connect the tunnel to the same Docker network and route the public hostname to the Tagbox container on HTTP port 80 (for example, `http://tagbox:80`). Configure DNS and tunnel credentials in the Cloudflare Tunnel deployment, outside this project.
 
 ## Project structure
 
-``` text
-tagbox/
-├── deploy/          # Nginx configuration and Dockerfile
-├── src/             # Application source code
-├── compose.yml      # Docker deployment configuration
-├── index.html
-├── package.json
-└── tsconfig.json
+```text
+.
+├── CHANGELOG.md         # Release history
+├── LICENSE              # MIT License
+├── README.md            # Project documentation
+├── deploy/
+│   ├── Dockerfile       # Nginx production image
+│   └── nginx.conf       # Static hosting and SPA fallback
+├── src/
+│   ├── brush.ts         # Brush input and stroke generation
+│   ├── main.ts          # UI, pointer events and app wiring
+│   ├── renderer.ts      # WebGL2 canvas and chrome compositor
+│   ├── runoff.ts        # Runoff and splatter geometry
+│   ├── settings.ts      # Canvas dimensions and material data types
+│   ├── smoothing.ts     # Pointer smoothing and stroke interpolation
+│   ├── style.css        # Application styles
+│   └── version.d.ts     # TypeScript declaration for injected version
+├── compose.yml          # Docker Compose service and external network
+├── index.html           # Application document and UI structure
+├── package.json         # Scripts, dependencies and version source
+├── package-lock.json    # Locked npm dependency versions
+├── tsconfig.json        # TypeScript compiler configuration
+└── vite.config.ts       # Vite setup and package version injection
 ```
 
-## Browser support
+## Browser support and limitations
 
-Tagbox requires WebGL2. Performance depends on the browser, GPU and the
-amount of paint and runoff retained on the canvas.
+Tagbox requires a browser with WebGL2 enabled. Fullscreen and screen-orientation controls depend on browser and device support; the Canvas Only layout remains available when orientation locking is not. Very large artworks retain stroke and runoff geometry for redraw and undo, so memory use and rendering cost can increase as artwork grows.
 
 ## License
 
-No license has been specified yet. Unless a license is added, all rights
-are reserved by the copyright holder.
+Tagbox is released under the MIT License. See [LICENSE](LICENSE).

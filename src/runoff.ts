@@ -1,4 +1,4 @@
-import type { Dab, Point, Stroke } from './settings';
+import type { Dab, Point, SplatterParticle, Stroke } from './settings';
 
 interface Channel {
   x: number;
@@ -29,6 +29,9 @@ interface CandidateState {
   attempts: number;
   dwellEvents: number;
   speedSum: number;
+  splatterPoint: Point;
+  splatterDistance: number;
+  randomSeed: number;
 }
 
 /** Sparse paint channels and joined runoff sheets, grouped by their source stroke. */
@@ -40,7 +43,7 @@ export class RunoffEngine {
 
   setIntensity(value: number): void { this.intensity = Math.max(0, Math.min(1, value)); }
 
-  addDabs(stroke: Stroke, dabs: Dab[], now: number, canvasHeight: number): void {
+  addDabs(stroke: Stroke, dabs: Dab[], now: number, canvasWidth: number, canvasHeight: number): void {
     if (!dabs.length) return;
     let runs = this.byStroke.get(stroke);
     if (!runs) { runs = []; this.byStroke.set(stroke, runs); }
@@ -52,6 +55,8 @@ export class RunoffEngine {
           lastDab: { x: dab.x, y: dab.y }, lastCandidate: dab,
           lastCandidateAt: now, pathLength: 0, distanceSinceCandidate: 0, loadSum: dab.load,
           paintLoadSum: dab.paintLoad, samples: 1, attempts: 0, dwellEvents: 0, speedSum: dab.speed,
+          splatterPoint: { x: dab.x, y: dab.y }, splatterDistance: 0,
+          randomSeed: this.seedForStroke(stroke, dab),
         };
         this.candidates.set(stroke, state);
         continue;
@@ -61,12 +66,21 @@ export class RunoffEngine {
       state.pathLength += distance;
       state.distanceSinceCandidate += distance;
       state.lastDab = { x: dab.x, y: dab.y };
+      state.splatterDistance += distance;
+      const splatterSpacing = Math.max(16, Math.min(48, stroke.size * 0.75));
+      if (state.splatterDistance >= splatterSpacing) {
+        const travelX = dab.x - state.splatterPoint.x;
+        const travelY = dab.y - state.splatterPoint.y;
+        this.trySpawnSplatter(stroke, dab, travelX, travelY, state);
+        state.splatterPoint = { x: dab.x, y: dab.y };
+        state.splatterDistance %= splatterSpacing;
+      }
       state.loadSum += dab.load;
       state.paintLoadSum += dab.paintLoad;
       state.speedSum += dab.speed;
       state.samples++;
 
-      const spacing = Math.max(16, stroke.size * 1.5);
+      const spacing = Math.max(8, Math.min(32, stroke.size * 0.6));
       const movedEnough = state.distanceSinceCandidate >= spacing;
       const restedEnough = state.samples >= 4 && now - state.lastCandidateAt >= 420;
       if (!movedEnough && !restedEnough) continue;
@@ -74,19 +88,20 @@ export class RunoffEngine {
       const averageLoad = state.loadSum / state.samples;
       const averagePaintLoad = state.paintLoadSum / state.samples;
       const averageSpeed = state.speedSum / state.samples;
-      const dryness = 1 - averagePaintLoad;
       const dwell = Math.min(0.24, Math.max(0, state.samples - 1) * 0.04);
-      const intensityScale = 0.12 + this.intensity * 1.42;
+      const intensityScale = 0.08 + this.intensity * 1.75;
       const speedScale = 1.18 - averageSpeed * 0.78;
-      const baseChance = 0.035 + averageLoad * 0.48 + averagePaintLoad * 0.16 + dryness * 0.12 + dwell;
-      const chance = Math.max(0, Math.min(0.9, baseChance * intensityScale * speedScale));
-      const pathCapacity = Math.floor((state.pathLength / spacing) * (0.25 + this.intensity * 1.25));
+      // Intensity controls event frequency; paint load selects runoff style later.
+      const baseChance = 0.18 + dwell * 0.35;
+      const wetSpawnBoost = 1 + Math.max(0, averagePaintLoad - 0.5) * 1.2;
+      const chance = Math.max(0, Math.min(0.9, baseChance * intensityScale * speedScale * wetSpawnBoost));
+      const pathCapacity = Math.floor((state.pathLength / spacing) * (0.08 + this.intensity * 1.65));
       if (restedEnough) state.dwellEvents++;
       const dwellCapacity = state.dwellEvents;
       const maxForStroke = Math.max(1, pathCapacity + dwellCapacity);
       const candidate = movedEnough ? dab : state.lastCandidate;
       if (state.attempts < maxForStroke && Math.random() < chance) {
-        if (this.spawn(runs, stroke, candidate, averageLoad, averagePaintLoad, averageSpeed, canvasHeight)) state.attempts++;
+        if (this.spawn(runs, stroke, candidate, averageLoad, averagePaintLoad, averageSpeed, canvasWidth, canvasHeight)) state.attempts++;
       }
       state.lastCandidate = movedEnough ? dab : state.lastCandidate;
       state.lastCandidateAt = now;
@@ -99,17 +114,102 @@ export class RunoffEngine {
     this.geometryCache.delete(stroke);
   }
 
-  private spawn(runs: Run[], stroke: Stroke, dab: Dab, load: number, paintLoad: number, speed: number, canvasHeight: number): boolean {
+  private seedForStroke(stroke: Stroke, dab: Dab): number {
+    const x = Math.floor(dab.x * 10);
+    const y = Math.floor(dab.y * 10);
+    let colorHash = 2166136261;
+    for (const character of stroke.color) colorHash = Math.imul(colorHash ^ character.charCodeAt(0), 16777619);
+    const seed = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(Math.floor(stroke.size * 10), 83492791) ^ Math.floor(stroke.rotation * 1e6) ^ colorHash) >>> 0;
+    return seed || 1;
+  }
+
+  private random(state: CandidateState): number {
+    state.randomSeed = (Math.imul(state.randomSeed, 1664525) + 1013904223) >>> 0;
+    return state.randomSeed / 0x100000000;
+  }
+
+  private trySpawnSplatter(stroke: Stroke, dab: Dab, travelX: number, travelY: number, state: CandidateState): void {
+    const velocity = dab.velocity ?? 0;
+    if (velocity < 500) return;
+    const speedFactor = Math.max(0, Math.min(1, (velocity - 500) / 1200));
+    const dryness = 1 - dab.paintLoad;
+    const intensityFactor = 0.2 + this.intensity * 0.8;
+    if (stroke.splatterEnabled === false) return;
+    // Wet load yields more, smaller droplets; dry load keeps fewer irregular flecks.
+    const probability = 0.30 * speedFactor * intensityFactor * (0.42 + dab.paintLoad * 0.58);
+    if (this.random(state) >= probability) return;
+
+    const random = (): number => this.random(state);
+    const origin = this.samplePaintInterior(dab, stroke, random);
+    const travelLength = Math.hypot(travelX, travelY);
+    const tangentX = travelLength > 0.001 ? travelX / travelLength : 0;
+    const tangentY = travelLength > 0.001 ? travelY / travelLength : 0;
+    const randomAngle = random() * Math.PI * 2;
+    let directionX = Math.cos(randomAngle) * 0.62 - tangentX * 0.38;
+    let directionY = Math.sin(randomAngle) * 0.55 - tangentY * 0.22 + 0.48;
+    const directionLength = Math.hypot(directionX, directionY) || 1;
+    directionX /= directionLength;
+    directionY /= directionLength;
+    const launchSpeed = 220 + speedFactor * 360 + random() * 160;
+    const radius = Math.max(0.8, Math.min(4.8, (1.0 + speedFactor * 1.55) * (0.82 + dryness * 0.42) * (0.82 + random() * 0.44)));
+    const lifetime = 0.05 + random() * 0.10;
+    const secondaryChance = dab.paintLoad < 0.55 ? 0.045 + this.intensity * 0.065 : 0.012 + this.intensity * 0.025;
+    const secondaryRunoff = radius >= 3.1 && random() < secondaryChance ? {
+      x: origin.x, y: origin.y, width: Math.max(0.55, radius * 0.16), length: 0,
+      maxLength: 5 + random() * 12, speed: 90 + random() * 85, age: 0,
+      seed: random() * Math.PI * 2, started: false,
+    } : undefined;
+    const particles = stroke.splatter ?? (stroke.splatter = []);
+    particles.push({
+      x: origin.x, y: origin.y, originX: origin.x, originY: origin.y,
+      vx: directionX * launchSpeed,
+      vy: directionY * launchSpeed,
+      radius,
+      aspect: 1 + dryness * random() * 0.72,
+      age: 0,
+      lifetime,
+      gravity: 700 + dryness * 350,
+      secondaryRunoff,
+    });
+    this.geometryCache.delete(stroke);
+  }
+
+  private samplePaintInterior(dab: Dab, stroke: Stroke, random: () => number): Point {
+    const size = dab.size;
+    const angle = dab.angle ?? stroke.rotation;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    if (stroke.shape === 'round') {
+      const radius = size * 0.46 * Math.sqrt(random());
+      const theta = random() * Math.PI * 2;
+      return { x: dab.x + radius * Math.cos(theta), y: dab.y - radius * Math.sin(theta) };
+    }
+    if (stroke.shape === 'square') {
+      const qx = (random() * 2 - 1) * size * 0.46;
+      const qy = (random() * 2 - 1) * size * 0.46;
+      return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
+    }
+    const radial = Math.sqrt(random());
+    const theta = random() * Math.PI * 2;
+    const qx = size * 0.82 * radial * Math.cos(theta);
+    const qy = size * 0.30 * radial * Math.sin(theta);
+    return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
+  }
+
+  private spawn(runs: Run[], stroke: Stroke, dab: Dab, load: number, paintLoad: number, speed: number, canvasWidth: number, canvasHeight: number): boolean {
     const dry = 1 - paintLoad;
-    const isSheet = dry > 0.26 && Math.random() < dry * (0.52 + this.intensity * 0.32);
-    const channelWidth = Math.max(0.55, stroke.size * (isSheet ? 0.045 + paintLoad * 0.025 : 0.045 + paintLoad * 0.075));
-    const channelCount = isSheet ? Math.round(3 + this.intensity * 4) : 1;
+    const isSheet = Math.random() < 0.02 + dry * 0.80;
+    const baseWidth = stroke.size * (isSheet ? 0.055 + dry * 0.12 : 0.032 + paintLoad * 0.022 + paintLoad * paintLoad * 0.012);
+    const channelCount = isSheet ? Math.round(3 + this.intensity * 4) : 1 + Math.floor(paintLoad * this.intensity * 2.5);
     const channels: Channel[] = [];
-    const lengthFactor = (0.35 + this.intensity * 0.9) * (0.38 + paintLoad * 0.72);
+    const lengthFactor = 0.15 + this.intensity * 1.25;
 
     for (let i = 0; i < channelCount; i++) {
+      const widthVariation = isSheet ? 0.6 + Math.random() * (0.5 + dry * 0.7) : 0.8 + Math.random() * (0.4 + dry * 0.4);
+      const channelWidth = Math.max(0.55, baseWidth * widthVariation);
       const origin = this.samplePaintCoverage(dab, stroke, channelWidth * 0.55);
-      if (!origin) continue;
+      if (!origin || !this.pointInsideDab(dab, stroke, origin.x, origin.y)) continue;
+      if (origin.x < 0 || origin.x >= canvasWidth || origin.y < 0 || origin.y >= canvasHeight) continue;
       const available = Math.max(0, canvasHeight - origin.y);
       if (available < 3) continue;
       const fast = 20 + Math.random() * 20;
@@ -158,10 +258,10 @@ export class RunoffEngine {
 
   /** Samples the lower contour inside the exact dab primitive used for the stroke. */
   private samplePaintCoverage(dab: Dab, stroke: Stroke, inset: number): Point | null {
-    const size = stroke.size;
+    const size = dab.size;
     const pointSize = stroke.shape === 'chisel' ? size * 1.8 : stroke.shape === 'square' ? size + 2 : size;
     const half = size * 0.5;
-    const angle = stroke.rotation;
+    const angle = dab.angle ?? stroke.rotation;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
 
@@ -175,16 +275,28 @@ export class RunoffEngine {
     if (stroke.shape === 'square') {
       const interiorHalf = Math.max(0, half - inset);
       if (interiorHalf <= 0) return null;
-      const localX = (Math.random() * 2 - 1) * interiorHalf;
-      const localY = -interiorHalf;
-      return { x: dab.x + localX, y: dab.y - localY };
+      const c = Math.cos(angle); const s = Math.sin(angle);
+      const corners = [
+        [-interiorHalf, -interiorHalf], [interiorHalf, -interiorHalf],
+        [interiorHalf, interiorHalf], [-interiorHalf, interiorHalf],
+      ];
+      let lowerEdge = 0; let lowerY = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i]; const b = corners[(i + 1) % 4];
+        const averageScreenY = -((s * a[0] + c * a[1]) + (s * b[0] + c * b[1])) * 0.5;
+        if (averageScreenY > lowerY) { lowerY = averageScreenY; lowerEdge = i; }
+      }
+      const a = corners[lowerEdge]; const b = corners[(lowerEdge + 1) % 4];
+      const t = 0.15 + Math.random() * 0.7;
+      const qx = a[0] + (b[0] - a[0]) * t; const qy = a[1] + (b[1] - a[1]) * t;
+      return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
     }
 
     const majorRadius = Math.max(0, size * 0.9 - inset);
     const minorRadius = Math.max(0, size * 0.35 - inset);
     if (majorRadius <= 0 || minorRadius <= 0) return null;
     for (let attempt = 0; attempt < 32; attempt++) {
-      const contourAngle = Math.PI + Math.random() * Math.PI;
+      const contourAngle = Math.random() * Math.PI * 2;
       const qx = (majorRadius / pointSize) * Math.cos(contourAngle);
       const qy = (minorRadius / pointSize) * Math.sin(contourAngle);
       const px = c * qx - s * qy;
@@ -192,6 +304,24 @@ export class RunoffEngine {
       if (py < 0) return { x: dab.x + px * pointSize, y: dab.y - py * pointSize };
     }
     return null;
+  }
+
+  /** Matches the same logical-space primitive and rotation used by the dab shader. */
+  private pointInsideDab(dab: Dab, stroke: Stroke, x: number, y: number): boolean {
+    const size = dab.size;
+    if (stroke.shape === 'round') {
+      const dx = x - dab.x; const dy = y - dab.y;
+      return dx * dx + dy * dy <= size * size * 0.25;
+    }
+    const angle = dab.angle ?? stroke.rotation;
+    const c = Math.cos(angle); const s = Math.sin(angle);
+    const pointSize = stroke.shape === 'square' ? size * (Math.abs(c) + Math.abs(s)) + 2 : size * 1.8;
+    const px = (x - dab.x) / pointSize;
+    const py = (dab.y - y) / pointSize;
+    const qx = c * px + s * py;
+    const qy = -s * px + c * py;
+    if (stroke.shape === 'square') return Math.abs(qx * pointSize) <= size * 0.5 && Math.abs(qy * pointSize) <= size * 0.5;
+    return qx * qx / 0.25 + qy * qy / 0.0378 <= 1;
   }
 
   advance(deltaSeconds: number): void {
@@ -205,12 +335,34 @@ export class RunoffEngine {
         channel.length = Math.min(channel.maxLength, channel.length + channel.speed * variation * dt);
         changed = true;
       }
+      for (const particle of stroke.splatter ?? []) {
+        if (particle.age < particle.lifetime) {
+          particle.age = Math.min(particle.lifetime, particle.age + dt);
+          particle.x = particle.originX + particle.vx * particle.age;
+          particle.y = particle.originY + particle.vy * particle.age + 0.5 * particle.gravity * particle.age * particle.age;
+          if (particle.age >= particle.lifetime && particle.secondaryRunoff) {
+            particle.secondaryRunoff.x = particle.x;
+            particle.secondaryRunoff.y = particle.y;
+            particle.secondaryRunoff.started = true;
+          }
+          changed = true;
+        } else if (particle.secondaryRunoff?.started && particle.secondaryRunoff.length < particle.secondaryRunoff.maxLength) {
+          const channel = particle.secondaryRunoff;
+          channel.age += dt;
+          const modulation = 0.9 + 0.1 * Math.sin(channel.age * 3 + channel.seed);
+          channel.length = Math.min(channel.maxLength, channel.length + channel.speed * modulation * dt);
+          changed = true;
+        }
+      }
       if (changed) this.geometryCache.delete(stroke);
     }
   }
 
   hasGrowingRuns(): boolean {
-    for (const runs of this.byStroke.values()) if (runs.some((run) => run.channels.some((channel) => channel.length < channel.maxLength))) return true;
+    for (const [stroke, runs] of this.byStroke) {
+      if (runs.some((run) => run.channels.some((channel) => channel.length < channel.maxLength))) return true;
+      if ((stroke.splatter ?? []).some((particle) => particle.age < particle.lifetime || Boolean(particle.secondaryRunoff?.started && particle.secondaryRunoff.length < particle.secondaryRunoff.maxLength))) return true;
+    }
     return false;
   }
 
@@ -230,9 +382,32 @@ export class RunoffEngine {
       if (run.kind === 'sheet') this.appendSheet(vertices, run);
       else for (const channel of run.channels) this.appendDrop(vertices, channel, run.color);
     }
+    const color = this.parseColor(stroke.color);
+    for (const particle of stroke.splatter ?? []) {
+      this.appendSplatter(vertices, particle, color);
+      if (particle.secondaryRunoff?.started) this.appendDrop(vertices, particle.secondaryRunoff, color);
+    }
     const geometry = new Float32Array(vertices);
     this.geometryCache.set(stroke, geometry);
     return geometry;
+  }
+
+  private appendSplatter(vertices: number[], particle: SplatterParticle, color: [number, number, number]): void {
+    const c = Math.cos(Math.atan2(particle.vy, particle.vx));
+    const s = Math.sin(Math.atan2(particle.vy, particle.vx));
+    const radiusX = particle.radius * particle.aspect;
+    const radiusY = particle.radius / Math.max(1, particle.aspect * 0.72);
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const a = i / count * Math.PI * 2;
+      const b = (i + 1) / count * Math.PI * 2;
+      const point = (angle: number): number[] => {
+        const lx = Math.cos(angle) * radiusX;
+        const ly = Math.sin(angle) * radiusY;
+        return [particle.x + c * lx - s * ly, particle.y + s * lx + c * ly];
+      };
+      this.triangle(vertices, [particle.x, particle.y], point(a), point(b), color);
+    }
   }
 
   private appendDrop(vertices: number[], channel: Channel, color: [number, number, number]): void {

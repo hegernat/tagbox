@@ -1,23 +1,37 @@
 import type { Point } from './settings';
 
-/** Low-pass filtering only: pointer jitter reduction, with no geometric resampling. */
+/** Time-based, velocity-adaptive low-pass filtering with a stable exact zero setting. */
 export class PointerFilter {
   private filtered: Point | null = null;
+  private previousRaw: Point | null = null;
+  private previousTime = 0;
   constructor(private readonly amount: number) {}
 
-  push(raw: Point): Point {
+  push(raw: Point, time: number): Point {
     if (!this.filtered || this.amount <= 0) {
       this.filtered = { ...raw };
+      this.previousRaw = { ...raw };
+      this.previousTime = time;
       return { ...raw };
     }
-    // At 12% the pointer follows promptly with a small, visible stabilizing lag.
-    // The 25% upper end produces a stronger but still bounded trail.
-    const alpha = 1 - this.amount * 1.8;
+    const dt = Math.max(1, time - this.previousTime) / 1000;
+    const rawSpeed = this.previousRaw ? Math.hypot(raw.x - this.previousRaw.x, raw.y - this.previousRaw.y) / dt : 0;
+    const smoothing = Math.max(0, Math.min(1, this.amount));
+    const tau = (0.004 + 0.15 * smoothing * smoothing) / (1 + rawSpeed / 700);
+    const alpha = 1 - Math.exp(-dt / tau);
     this.filtered = {
       x: this.filtered.x + (raw.x - this.filtered.x) * alpha,
       y: this.filtered.y + (raw.y - this.filtered.y) * alpha,
     };
+    this.previousRaw = { ...raw };
+    this.previousTime = time;
     return { ...this.filtered };
+  }
+
+  flush(endpoint: Point): Point {
+    this.filtered = { ...endpoint };
+    this.previousRaw = { ...endpoint };
+    return { ...endpoint };
   }
 
   current(): Point | null { return this.filtered ? { ...this.filtered } : null; }
@@ -57,7 +71,7 @@ export class StrokeInterpolator {
   finish(point: Point): Point[] {
     if (!this.previous || !this.lastSample) return [];
     const distance = Math.hypot(point.x - this.lastSample.x, point.y - this.lastSample.y);
-    if (distance < 0.2) return [];
+    if (distance < 0.001) return [];
     this.previous = { ...point };
     this.lastSample = { ...point };
     return [{ ...point }];

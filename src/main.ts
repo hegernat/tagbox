@@ -13,9 +13,14 @@ const sizeInput = document.querySelector<HTMLInputElement>('#brush-size')!;
 const smoothingInput = document.querySelector<HTMLInputElement>('#smoothing')!;
 const wetnessInput = document.querySelector<HTMLInputElement>('#wetness')!;
 const intensityInput = document.querySelector<HTMLInputElement>('#run-intensity')!;
+const splatterInput = document.querySelector<HTMLInputElement>('#paint-splatter')!;
 const colorInput = document.querySelector<HTMLInputElement>('#brush-color')!;
-const rotationInput = document.querySelector<HTMLInputElement>('#brush-rotation')!;
 const rotationGroup = document.querySelector<HTMLElement>('#rotation-group')!;
+const rotationDial = document.querySelector<HTMLButtonElement>('#rotation-dial')!;
+const rotationTip = document.querySelector<HTMLElement>('.rotation-tip-preview')!;
+const rotationValue = document.querySelector<HTMLOutputElement>('#rotation-value')!;
+const brushCursor = document.querySelector<HTMLElement>('#brush-cursor-preview')!;
+const brushCursorTip = document.querySelector<HTMLElement>('.brush-cursor-tip')!;
 const backgroundInput = document.querySelector<HTMLInputElement>('#canvas-background')!;
 const presetPalette = document.querySelector<HTMLElement>('#preset-palette')!;
 const materialPalette = document.querySelector<HTMLElement>('#material-palette')!;
@@ -30,6 +35,45 @@ const shapeRotations: Record<'square' | 'chisel', number> = { square: 0, chisel:
 let isDrawing = false;
 let holdTimer = 0;
 let activePointerId: number | null = null;
+let lastCanvasPointer: PointerEvent | null = null;
+let rotationPointerId: number | null = null;
+
+function updateBrushCursor(event: PointerEvent): void {
+  lastCanvasPointer = event;
+  if (event.pointerType === 'touch') { brushCursor.hidden = true; return; }
+  const stage = canvas.parentElement!;
+  const stageRect = stage.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  const scale = canvasRect.width / CANVAS_WIDTH;
+  const size = settings.size * scale;
+  brushCursor.style.left = `${event.clientX - stageRect.left - stage.clientLeft}px`;
+  brushCursor.style.top = `${event.clientY - stageRect.top - stage.clientTop}px`;
+  brushCursorTip.style.width = `${size * (settings.shape === 'chisel' ? 1.8 : 1)}px`;
+  brushCursorTip.style.height = `${size * (settings.shape === 'chisel' ? 0.7 : 1)}px`;
+  brushCursorTip.dataset.shape = settings.shape;
+  brushCursorTip.dataset.material = settings.material;
+  brushCursorTip.style.transform = `translate(-50%, -50%) rotate(${settings.shape === 'round' ? 0 : settings.rotationDegrees}deg)`;
+  brushCursor.hidden = false;
+}
+
+function setRotation(degrees: number): void {
+  settings.rotationDegrees = Math.max(0, Math.min(180, Math.round(degrees)));
+  if (settings.shape !== 'round') shapeRotations[settings.shape] = settings.rotationDegrees;
+  rotationValue.textContent = `${settings.rotationDegrees}°`;
+  rotationDial.setAttribute('aria-valuenow', String(settings.rotationDegrees));
+  rotationDial.setAttribute('aria-valuetext', `${settings.rotationDegrees} degrees`);
+  rotationTip.style.transform = `translate(-50%, -50%) rotate(${settings.rotationDegrees}deg)`;
+  if (lastCanvasPointer) updateBrushCursor(lastCanvasPointer);
+}
+
+function setRotationFromPointer(event: PointerEvent): void {
+  const rect = rotationDial.getBoundingClientRect();
+  const dx = event.clientX - (rect.left + rect.width / 2);
+  const dy = event.clientY - (rect.top + rect.height / 2);
+  const aroundDial = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+  setRotation(((aroundDial % 180) + 180) % 180);
+}
+
 function resizeCanvas(): void {
   const stage = canvas.parentElement!;
   const scale = Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
@@ -48,14 +92,17 @@ canvas.addEventListener('pointerdown', (event) => {
   canvas.setPointerCapture(event.pointerId);
   isDrawing = true;
   activePointerId = event.pointerId;
-  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material, settings.rotationDegrees);
+  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material, settings.rotationDegrees, settings.splatterEnabled);
   holdTimer = window.setInterval(() => { if (isDrawing) brush.hold(); }, 60);
 });
+canvas.addEventListener('pointerenter', updateBrushCursor);
 canvas.addEventListener('pointermove', (event) => {
+  updateBrushCursor(event);
   if (!isDrawing || event.pointerId !== activePointerId) return;
   const coalesced = [...(event.getCoalescedEvents?.() ?? [event])].sort((a, b) => a.timeStamp - b.timeStamp);
   for (const sample of coalesced) brush.move(pointerPosition(sample, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), sample.timeStamp);
 });
+canvas.addEventListener('pointerleave', () => { if (!isDrawing) brushCursor.hidden = true; });
 function finishStroke(event?: PointerEvent): void {
   if (!isDrawing) return;
   if (event && event.pointerId !== activePointerId) return;
@@ -118,6 +165,13 @@ intensityInput.addEventListener('input', () => {
   settings.intensity = Number(intensityInput.value) / 100;
   renderer.setRunIntensity(settings.intensity);
   document.querySelector('#run-intensity-value')!.textContent = `${intensityInput.value}%`;
+});
+const splatterEnabledKey = 'tagbox.paint-splatter';
+try { settings.splatterEnabled = localStorage.getItem(splatterEnabledKey) !== 'false'; } catch { /* Keep splatter enabled when storage is unavailable. */ }
+splatterInput.checked = settings.splatterEnabled;
+splatterInput.addEventListener('change', () => {
+  settings.splatterEnabled = splatterInput.checked;
+  try { localStorage.setItem(splatterEnabledKey, String(settings.splatterEnabled)); } catch { /* New strokes still honor the in-memory setting. */ }
 });
 const presetColors = [
   '#ffffff', '#d9ff00', '#ff4d29', '#a77bff', '#32d6c3', '#111111', '#72777b', '#c7c9c5',
@@ -227,20 +281,34 @@ document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((but
   settings.shape = button.dataset.shape as typeof settings.shape;
   rotationGroup.hidden = settings.shape === 'round';
   if (settings.shape !== 'round') {
-    settings.rotationDegrees = shapeRotations[settings.shape];
-    rotationInput.value = String(settings.rotationDegrees);
-    document.querySelector<HTMLOutputElement>('#rotation-value')!.textContent = `${settings.rotationDegrees}°`;
+    rotationTip.dataset.shape = settings.shape;
+    setRotation(shapeRotations[settings.shape]);
   }
+  if (lastCanvasPointer) updateBrushCursor(lastCanvasPointer);
   document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((option) => {
     const selected = option === button;
     option.classList.toggle('active', selected);
     option.setAttribute('aria-pressed', String(selected));
   });
 }));
-rotationInput.addEventListener('input', () => {
-  settings.rotationDegrees = Number(rotationInput.value);
-  if (settings.shape !== 'round') shapeRotations[settings.shape] = settings.rotationDegrees;
-  document.querySelector<HTMLOutputElement>('#rotation-value')!.textContent = `${settings.rotationDegrees}°`;
+rotationDial.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  rotationPointerId = event.pointerId;
+  rotationDial.setPointerCapture(event.pointerId);
+  setRotationFromPointer(event);
+});
+rotationDial.addEventListener('pointermove', (event) => {
+  if (event.pointerId === rotationPointerId) setRotationFromPointer(event);
+});
+const stopRotation = (event: PointerEvent): void => { if (event.pointerId === rotationPointerId) rotationPointerId = null; };
+rotationDial.addEventListener('pointerup', stopRotation);
+rotationDial.addEventListener('pointercancel', stopRotation);
+rotationDial.addEventListener('keydown', (event) => {
+  const step = event.shiftKey ? 5 : 1;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowUp') { event.preventDefault(); setRotation(settings.rotationDegrees + step); }
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') { event.preventDefault(); setRotation(settings.rotationDegrees - step); }
+  else if (event.key === 'Home') { event.preventDefault(); setRotation(0); }
+  else if (event.key === 'End') { event.preventDefault(); setRotation(180); }
 });
 function undo(): void {
   if (!strokes.length) return;
@@ -251,7 +319,11 @@ document.querySelector('#clear-button')!.addEventListener('click', () => {
   if (isDrawing) finishStroke();
   strokes.length = 0; renderer.clear(); undoButton.disabled = true;
 });
-window.addEventListener('keydown', (event) => {
+document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && appShell.classList.contains('canvas-only')) { void exitCanvasOnly(); return; }
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(); }
-});
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) return;
+  event.preventDefault();
+  if (!event.repeat) undo();
+}, true);

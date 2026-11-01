@@ -17,6 +17,7 @@
         <section class="canvas-stage" aria-label="Rityta">
           <canvas id="paint-canvas" aria-label="Rityta, dra med musen för att måla"></canvas>
           <canvas id="runoff-canvas" class="runoff-layer" aria-hidden="true"></canvas>
+          <div id="brush-cursor-preview" class="brush-cursor-preview" aria-hidden="true"><span class="brush-cursor-tip"></span></div>
           <div class="canvas-hud"><span class="hud-item"><span class="hud-key">DRAG</span> Paint</span><span class="hud-divider"></span><span class="hud-item"><span class="hud-key">⌘ Z</span> Undo</span></div>
           <div class="canvas-index">CANVAS <span>01</span></div>
           <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Tillbaka till Studio">Studio <kbd>Esc</kbd></button>
@@ -32,8 +33,10 @@
             </div>
           </div>
           <div id="rotation-group" class="tool-group rotation-group" hidden>
-            <div class="control-label"><label for="brush-rotation">Tip rotation</label><output id="rotation-value" for="brush-rotation">0°</output></div>
-            <input id="brush-rotation" class="range-input" type="range" min="0" max="180" step="1" value="0" />
+            <div class="control-label"><span class="shape-label">Tip rotation</span><output id="rotation-value">0°</output></div>
+            <button id="rotation-dial" class="rotation-dial" type="button" role="slider" aria-label="Brush tip rotation" aria-valuemin="0" aria-valuemax="180" aria-valuenow="0">
+              <span class="rotation-tip-preview" aria-hidden="true"></span><span class="rotation-dial-center" aria-hidden="true"></span>
+            </button>
             <div class="range-ends"><span>0°</span><span>180°</span></div>
           </div>
           <div class="tool-group">
@@ -42,19 +45,22 @@
             <div class="range-ends"><span>2</span><span>96</span></div>
           </div>
           <div class="tool-group smoothing-group">
-            <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">45%</output></div>
-            <input id="smoothing" class="range-input" type="range" min="0" max="25" value="12" />
+            <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">12%</output></div>
+            <input id="smoothing" class="range-input" type="range" min="0" max="100" value="12" />
             <div class="range-ends"><span>Raw</span><span>Steady</span></div>
           </div>
           <div class="tool-group wet-group">
             <div class="control-label"><label for="wetness">Paint load</label><output id="wetness-value" for="wetness">68%</output></div>
-            <input id="wetness" class="range-input" type="range" min="15" max="100" value="68" />
+            <input id="wetness" class="range-input" type="range" min="0" max="100" value="68" />
             <div class="range-ends"><span>Dry</span><span>Wet</span></div>
           </div>
           <div class="tool-group intensity-group">
             <div class="control-label"><label for="run-intensity">Run intensity</label><output id="run-intensity-value" for="run-intensity">58%</output></div>
             <input id="run-intensity" class="range-input" type="range" min="0" max="100" value="58" />
             <div class="range-ends"><span>Low</span><span>High</span></div>
+          </div>
+          <div class="tool-group splatter-group">
+            <label class="splatter-toggle" for="paint-splatter"><input id="paint-splatter" type="checkbox" checked /><span>Paint Splatter</span></label>
           </div>
           <div class="tool-group color-group">
             <div class="control-label"><label for="brush-color">Brush color</label><span class="color-hex" id="color-value">#FFFFFF</span></div>
