@@ -6,6 +6,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, settings, type Stroke } from './settings';
 const canvas = document.querySelector<HTMLCanvasElement>('#paint-canvas')!;
 const runoffCanvas = document.querySelector<HTMLCanvasElement>('#runoff-canvas')!;
 const renderer = new CanvasRenderer(canvas, runoffCanvas);
+document.querySelector<HTMLElement>('#brand-version')!.textContent = `v${__TAGBOX_VERSION__}`;
 const strokes: Stroke[] = [];
 const brush = new BrushEngine((stroke, dabs) => renderer.setActive(stroke, dabs));
 const sizeInput = document.querySelector<HTMLInputElement>('#brush-size')!;
@@ -13,6 +14,8 @@ const smoothingInput = document.querySelector<HTMLInputElement>('#smoothing')!;
 const wetnessInput = document.querySelector<HTMLInputElement>('#wetness')!;
 const intensityInput = document.querySelector<HTMLInputElement>('#run-intensity')!;
 const colorInput = document.querySelector<HTMLInputElement>('#brush-color')!;
+const rotationInput = document.querySelector<HTMLInputElement>('#brush-rotation')!;
+const rotationGroup = document.querySelector<HTMLElement>('#rotation-group')!;
 const backgroundInput = document.querySelector<HTMLInputElement>('#canvas-background')!;
 const presetPalette = document.querySelector<HTMLElement>('#preset-palette')!;
 const materialPalette = document.querySelector<HTMLElement>('#material-palette')!;
@@ -23,6 +26,7 @@ const appShell = document.querySelector<HTMLElement>('.app-shell')!;
 const modeButton = document.querySelector<HTMLButtonElement>('#canvas-mode-button')!;
 const exitCanvasButton = document.querySelector<HTMLButtonElement>('#canvas-exit-button')!;
 const screenOrientation = screen.orientation as ScreenOrientation & { lock?: (orientation: 'landscape') => Promise<void> };
+const shapeRotations: Record<'square' | 'chisel', number> = { square: 0, chisel: 30 };
 let isDrawing = false;
 let holdTimer = 0;
 let activePointerId: number | null = null;
@@ -44,7 +48,7 @@ canvas.addEventListener('pointerdown', (event) => {
   canvas.setPointerCapture(event.pointerId);
   isDrawing = true;
   activePointerId = event.pointerId;
-  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material);
+  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material, settings.rotationDegrees);
   holdTimer = window.setInterval(() => { if (isDrawing) brush.hold(); }, 60);
 });
 canvas.addEventListener('pointermove', (event) => {
@@ -221,12 +225,23 @@ try {
 backgroundInput.addEventListener('input', () => setBackgroundColor(backgroundInput.value));
 document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((button) => button.addEventListener('click', () => {
   settings.shape = button.dataset.shape as typeof settings.shape;
+  rotationGroup.hidden = settings.shape === 'round';
+  if (settings.shape !== 'round') {
+    settings.rotationDegrees = shapeRotations[settings.shape];
+    rotationInput.value = String(settings.rotationDegrees);
+    document.querySelector<HTMLOutputElement>('#rotation-value')!.textContent = `${settings.rotationDegrees}°`;
+  }
   document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((option) => {
     const selected = option === button;
     option.classList.toggle('active', selected);
     option.setAttribute('aria-pressed', String(selected));
   });
 }));
+rotationInput.addEventListener('input', () => {
+  settings.rotationDegrees = Number(rotationInput.value);
+  if (settings.shape !== 'round') shapeRotations[settings.shape] = settings.rotationDegrees;
+  document.querySelector<HTMLOutputElement>('#rotation-value')!.textContent = `${settings.rotationDegrees}°`;
+});
 function undo(): void {
   if (!strokes.length) return;
   strokes.pop(); renderer.setStrokes(strokes); undoButton.disabled = strokes.length === 0;

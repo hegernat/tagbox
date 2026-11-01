@@ -9,7 +9,7 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="Tagbox startsida"><span class="brand-mark">t</span><span>TAGBOX</span></a>
+        <a class="brand" href="#" aria-label="Tagbox startsida"><span class="brand-mark">t</span><span>TAGBOX <span id="brand-version"></span></span></a>
         <div class="document-name"><span class="live-dot"></span> Untitled canvas <span class="saved-label">· All changes saved</span></div>
         <div class="top-actions"><span class="workspace-label">STUDIO / 01</span><button id="canvas-mode-button" class="mode-button" type="button">Canvas Only</button><button id="clear-button" class="icon-button clear-button" type="button" title="Töm canvas" aria-label="Töm canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
       </header>
@@ -30,6 +30,11 @@
               <button class="brush-shape-option" type="button" data-shape="square" aria-label="Square penselspets" aria-pressed="false"><span class="shape-icon square-icon" aria-hidden="true"></span><span>Square</span></button>
               <button class="brush-shape-option" type="button" data-shape="chisel" aria-label="Chisel penselspets" aria-pressed="false"><span class="shape-icon chisel-icon" aria-hidden="true"></span><span>Chisel</span></button>
             </div>
+          </div>
+          <div id="rotation-group" class="tool-group rotation-group" hidden>
+            <div class="control-label"><label for="brush-rotation">Tip rotation</label><output id="rotation-value" for="brush-rotation">0°</output></div>
+            <input id="brush-rotation" class="range-input" type="range" min="0" max="180" step="1" value="0" />
+            <div class="range-ends"><span>0°</span><span>180°</span></div>
           </div>
           <div class="tool-group">
             <div class="control-label"><label for="brush-size">Brush size</label><output id="size-value" for="brush-size">10 px</output></div>
@@ -63,7 +68,7 @@
             <div class="color-control"><span class="background-color-swatch"></span><input id="canvas-background" type="color" value="#000000" aria-label="Choose canvas background color" /><span class="color-name">Background color</span><span class="chevron">↗</span></div>
           </div>
           <div class="tool-spacer"></div>
-          <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button><div class="tool-footer"><span>TAGBOX STUDIO</span><span>v0.1</span></div></div>
+          <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button></div>
         </aside>
       </main>
     </div>

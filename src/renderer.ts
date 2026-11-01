@@ -16,11 +16,11 @@ void main(){
   float coverage=texture(u_mask,v_uv).a;
   if(coverage<=0.001) discard;
   vec2 uv=vec2(v_uv.x,1.0-v_uv.y);
-  float band=0.20+0.09*smoothstep(0.08,0.30,sin(uv.y*6.283)*0.5+0.5)+0.10*smoothstep(0.40,0.66,sin(uv.y*12.566+0.7)*0.5+0.5);
+  float band=0.30+0.0375*smoothstep(0.08,0.30,sin(uv.y*6.283)*0.5+0.5)+0.0375*smoothstep(0.40,0.66,sin(uv.y*12.566+0.7)*0.5+0.5);
   float key=exp(-pow((uv.x-0.22)/0.16,2.0))*smoothstep(0.06,0.23,uv.y)*(1.0-smoothstep(0.72,0.94,uv.y));
   float strip=exp(-pow((uv.x-0.72)/0.11,2.0))*smoothstep(0.10,0.29,uv.y)*(1.0-smoothstep(0.58,0.82,uv.y));
   float box=exp(-pow((uv.x-0.48)/0.23,2.0)-pow((uv.y-0.13)/0.15,2.0));
-  float value=clamp(band+0.20*key+0.14*strip+0.16*box,0.14,0.68);
+  float value=clamp(band+0.15*key+0.107*strip+0.107*box,0.22,0.66);
 
   // Estimate the boundary normal from the already merged coverage. A short,
   // logical-pixel neighborhood keeps this rim independent of brush diameter.
@@ -33,23 +33,23 @@ void main(){
   float neighborMin=min(min(left,right),min(down,up));
   float rim=(1.0-smoothstep(0.0,0.92,neighborMin))*smoothstep(0.08,0.42,length(inward));
   vec2 normal=length(inward)>0.001?normalize(-inward):vec2(0.0);
-  vec2 lightDir=normalize(vec2(-0.55,-0.75));
+  vec2 lightDir=normalize(vec2(-0.55,0.75));
   float highlight=max(dot(normal,lightDir),0.0)*rim;
   float shadow=max(dot(normal,-lightDir),0.0)*rim;
 
   vec3 tint=u_material==2?vec3(0.96,0.56,0.36):vec3(0.86,0.90,0.94);
   vec3 color=tint*value;
-  color=color*(1.0-0.12*shadow)+vec3(0.075)*highlight;
+  color=color*(1.0-0.12*shadow)+vec3(0.085)*highlight;
   outColor=vec4(color,coverage);
 }`;
 const dabVertex = `#version 300 es
 precision highp float; precision highp int;
 in highp vec3 a_dab; uniform highp vec2 u_targetSize; uniform highp vec2 u_scale; uniform highp float u_brushSize; uniform highp int u_shape; out highp float v_angle; out highp float v_brushSizePx; out highp float v_pointSize; out highp vec2 v_world;
-void main(){ vec2 p=a_dab.xy*u_scale; vec2 clip=p/u_targetSize*2.0-1.0; gl_Position=vec4(clip.x,-clip.y,0.0,1.0); v_world=p; v_angle=a_dab.z; v_brushSizePx=u_brushSize*u_scale.y; v_pointSize=max(1.0,v_brushSizePx*(u_shape==2?1.8:1.0)+(u_shape==1?2.0*u_scale.y:0.0)); gl_PointSize=v_pointSize; }`;
+void main(){ vec2 p=a_dab.xy*u_scale; vec2 clip=p/u_targetSize*2.0-1.0; gl_Position=vec4(clip.x,-clip.y,0.0,1.0); v_world=p; v_angle=a_dab.z; v_brushSizePx=u_brushSize*u_scale.y; float c=abs(cos(a_dab.z)); float s=abs(sin(a_dab.z)); float extent=u_shape==2?1.8:u_shape==1?c+s:1.0; v_pointSize=max(1.0,v_brushSizePx*extent+(u_shape==1?2.0*u_scale.y:0.0)); gl_PointSize=v_pointSize; }`;
 const baseFragment = `#version 300 es
 precision highp float; precision highp int;
 uniform highp vec3 u_color; uniform highp int u_shape; uniform highp int u_maskOnly; in highp float v_angle; in highp float v_brushSizePx; in highp float v_pointSize; out highp vec4 outColor;
-void main(){ vec2 p=gl_PointCoord-vec2(0.5); float coverage=1.0; if(u_shape==0 && dot(p,p)>0.25) discard; if(u_shape==1){ vec2 pixel=p*v_pointSize; float edge=v_brushSizePx*0.5-max(abs(pixel.x),abs(pixel.y)); coverage=clamp(edge+0.5,0.0,1.0); if(coverage<=0.0) discard; } if(u_shape==2){ float c=cos(v_angle); float s=sin(v_angle); vec2 q=vec2(c*p.x+s*p.y,-s*p.x+c*p.y); if((q.x*q.x)/(0.25)+(q.y*q.y)/(0.0378)>1.0) discard; } outColor=vec4(u_maskOnly==1?vec3(1.0):u_color,coverage); }`;
+void main(){ vec2 p=gl_PointCoord-vec2(0.5); float coverage=1.0; if(u_shape==0 && dot(p,p)>0.25) discard; if(u_shape!=0){ float c=cos(v_angle); float s=sin(v_angle); vec2 q=vec2(c*p.x+s*p.y,-s*p.x+c*p.y); if(u_shape==1){ vec2 pixel=q*v_pointSize; float edge=v_brushSizePx*0.5-max(abs(pixel.x),abs(pixel.y)); coverage=clamp(edge+0.5,0.0,1.0); if(coverage<=0.0) discard; } else if((q.x*q.x)/(0.25)+(q.y*q.y)/(0.0378)>1.0) discard; } outColor=vec4(u_maskOnly==1?vec3(1.0):u_color,coverage); }`;
 const runoffVertex = `#version 300 es
 precision highp float;
 in highp vec2 a_position; in highp vec3 a_color; uniform highp vec2 u_resolution; out highp vec3 v_color; out highp vec2 v_world;

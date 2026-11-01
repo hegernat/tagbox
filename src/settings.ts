@@ -8,4 +8,4 @@ export interface Stroke { points: Point[]; dabs: Dab[]; size: number; color: str
 export const CANVAS_WIDTH = 1920;
 export const CANVAS_HEIGHT = 1080;
 
-export const settings: BrushSettings & { shape: BrushShape } = { size: 10, color: '#ffffff', material: 'paint', smoothing: 0.12, wetness: 0.68, intensity: 0.58, shape: 'round' };
+export const settings: BrushSettings & { shape: BrushShape; rotationDegrees: number } = { size: 10, color: '#ffffff', material: 'paint', smoothing: 0.12, wetness: 0.68, intensity: 0.58, shape: 'round', rotationDegrees: 0 };
