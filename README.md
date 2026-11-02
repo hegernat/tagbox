@@ -7,16 +7,20 @@ Tagbox is a browser-based graffiti painting application built with TypeScript, V
 ## Features
 
 - Fixed 1920×1080 logical canvas with responsive display scaling.
-- Freehand painting with adjustable brush size.
-- Round, Square and Chisel brush tips, with interactive rotation for Square and Chisel.
-- Adjustable stroke smoothing.
-- Custom brush colors, 16 color presets and a saved color palette.
-- Configurable canvas background.
-- Silver Chrome and Copper Chrome materials with procedural metallic reflections and shared chrome-surface compositing.
-- Wet and Dry Paint behavior, adjustable runoff intensity and simulated paint drips.
-- Velocity-based paint splatter with an enable/disable setting; selected landed particles can create short secondary runoff.
+- Freehand painting with Round, Square, Chisel and Split Chisel tips. Square, Chisel and Split Chisel support interactive rotation.
+- Custom brush colors, 16 presets, a saved color palette and configurable canvas background.
+- Silver Chrome, Copper Chrome and Gold Chrome with a shared procedural reflection environment. Consecutive Chrome strokes share a surface; overlapping material coverage blends their tints, while ordinary paint preserves stroke ordering.
+- Adjustable Paint Load and Run Intensity, simulated paint runoff and optional velocity-based Paint Splatter. Selected landed particles can create short secondary runoff.
 - Undo and clear-canvas controls, including Ctrl+Z and Cmd+Z shortcuts.
-- Fullscreen / Canvas Only mode, with mobile landscape orientation support where the browser allows it.
+- Fullscreen / Canvas Only mode. Desktop and landscape layouts fit the whole canvas; mobile portrait layouts fill the available stage height and center the canvas, clipping its horizontal edges. No panning is provided.
+
+## Controls and settings
+
+- Brush Size ranges from 2 to 96 logical pixels (default 10). Stroke Smoothing ranges from 0% to 100% (default 12%), Paint Load from 0% to 100% (default 68%), and Run Intensity from 0% to 100% (default 58%).
+- The rotation dial controls Square, Chisel and Split Chisel tips from 0° to 180°. Square starts at 0°; Chisel and Split Chisel start at 30°. Arrow keys adjust by 1° (Shift+Arrow by 5°); Home and End select the endpoints.
+- Selecting a paint color activates Paint; selecting a Chrome material activates that material. Chrome uses its built-in material tint rather than the selected paint color.
+- Brush color, selected material, saved colors, canvas background and Paint Splatter enabled state persist in the browser. Brush size, smoothing, Paint Load, Run Intensity, brush tip and tip rotation reset when the page reloads.
+- Use Undo Stroke or Ctrl+Z / Cmd+Z to undo one stroke. Clear removes the current artwork. Canvas Only enters fullscreen when supported; Esc or the Studio button exits.
 
 ## Technology
 
@@ -106,7 +110,7 @@ The Cloudflare Tunnel is external to this repository and is not started or confi
 
 ## Browser support and limitations
 
-Tagbox requires a browser with WebGL2 enabled. Fullscreen and screen-orientation controls depend on browser and device support; the Canvas Only layout remains available when orientation locking is not. Very large artworks retain stroke and runoff geometry for redraw and undo, so memory use and rendering cost can increase as artwork grows.
+Tagbox requires a browser with WebGL2 enabled. Fullscreen and screen-orientation controls depend on browser and device support; the Canvas Only layout remains available when orientation locking is unavailable. Artwork is held in memory for the current page session; there is no document save, load or export feature. Portrait mobile canvas edges are clipped and cannot be reached by panning. Very large artworks retain stroke and runoff geometry for redraw and undo, so memory use and rendering cost can increase as artwork grows.
 
 ## License
 

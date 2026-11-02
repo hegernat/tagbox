@@ -15,7 +15,7 @@ export class BrushEngine {
 
   constructor(private readonly onChange: (stroke: Stroke, newDabs: Dab[]) => void) {}
 
-  begin(point: Point, time: number, size: number, color: string, smoothing: number, wetness: number, shape: BrushShape = 'round', material: Material = 'paint', rotationDegrees = shape === 'chisel' ? DEFAULT_CHISEL_ROTATION_DEGREES : 0, splatterEnabled = true): void {
+  begin(point: Point, time: number, size: number, color: string, smoothing: number, wetness: number, shape: BrushShape = 'round', material: Material = 'paint', rotationDegrees = shape === 'chisel' || shape === 'split-chisel' ? DEFAULT_CHISEL_ROTATION_DEGREES : 0, splatterEnabled = true): void {
     // Store orientation on the stroke so later rotation controls can override it
     // without tying the nib to pointer motion.
     const rotation = shape === 'round' ? 0 : Math.max(0, Math.min(180, rotationDegrees)) * Math.PI / 180;

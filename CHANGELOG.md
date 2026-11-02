@@ -2,6 +2,21 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.4.0] - 2026-11-02
+
+### Added
+
+- Split Chisel brush tip with a transverse gap, shared rotation control and runoff sampling from its two separate segments.
+- Gold Chrome material, joining Silver and Copper Chrome in the shared reflection compositor.
+- Mobile portrait canvas scaling that fills the available canvas-stage height and centers the wider canvas with clipped horizontal edges.
+
+### Changed
+
+- Chrome strokes now share a continuous surface across consecutive material changes, with coverage-weighted material tint blending and runoff included in the same surface.
+- Balanced Chrome reflections with brighter shadow regions, smoother broad transitions and distinct studio highlights.
+- Made color and Chrome material active selections mutually exclusive.
+- Removed the instructional/status overlay from the bottom of the canvas.
+
 ## [0.3.0] - 2026-11-01
 
 ### Added

@@ -1,7 +1,7 @@
 import './style.css';
 import { BrushEngine } from './brush';
 import { pointerPosition, CanvasRenderer } from './renderer';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, settings, type Stroke } from './settings';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, settings, type Material, type Stroke } from './settings';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#paint-canvas')!;
 const runoffCanvas = document.querySelector<HTMLCanvasElement>('#runoff-canvas')!;
@@ -31,7 +31,7 @@ const appShell = document.querySelector<HTMLElement>('.app-shell')!;
 const modeButton = document.querySelector<HTMLButtonElement>('#canvas-mode-button')!;
 const exitCanvasButton = document.querySelector<HTMLButtonElement>('#canvas-exit-button')!;
 const screenOrientation = screen.orientation as ScreenOrientation & { lock?: (orientation: 'landscape') => Promise<void> };
-const shapeRotations: Record<'square' | 'chisel', number> = { square: 0, chisel: 30 };
+const shapeRotations: Record<'square' | 'chisel' | 'split-chisel', number> = { square: 0, chisel: 30, 'split-chisel': 30 };
 let isDrawing = false;
 let holdTimer = 0;
 let activePointerId: number | null = null;
@@ -48,8 +48,9 @@ function updateBrushCursor(event: PointerEvent): void {
   const size = settings.size * scale;
   brushCursor.style.left = `${event.clientX - stageRect.left - stage.clientLeft}px`;
   brushCursor.style.top = `${event.clientY - stageRect.top - stage.clientTop}px`;
-  brushCursorTip.style.width = `${size * (settings.shape === 'chisel' ? 1.8 : 1)}px`;
-  brushCursorTip.style.height = `${size * (settings.shape === 'chisel' ? 0.7 : 1)}px`;
+  const isChisel = settings.shape === 'chisel' || settings.shape === 'split-chisel';
+  brushCursorTip.style.width = `${size * (isChisel ? 1.8 : 1)}px`;
+  brushCursorTip.style.height = `${size * (isChisel ? 0.7 : 1)}px`;
   brushCursorTip.dataset.shape = settings.shape;
   brushCursorTip.dataset.material = settings.material;
   brushCursorTip.style.transform = `translate(-50%, -50%) rotate(${settings.shape === 'round' ? 0 : settings.rotationDegrees}deg)`;
@@ -76,7 +77,10 @@ function setRotationFromPointer(event: PointerEvent): void {
 
 function resizeCanvas(): void {
   const stage = canvas.parentElement!;
-  const scale = Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
+  const portraitMobile = window.matchMedia('(max-width: 700px) and (orientation: portrait)').matches;
+  const scale = portraitMobile
+    ? stage.clientHeight / CANVAS_HEIGHT
+    : Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
   const displayWidth = CANVAS_WIDTH * scale;
   const displayHeight = CANVAS_HEIGHT * scale;
   renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT, Math.min(window.devicePixelRatio || 1, 2), displayWidth, displayHeight);
@@ -201,17 +205,18 @@ function setColor(color: string, selectPaint = true): void {
   document.querySelector('#color-value')!.textContent = color.toUpperCase();
   document.querySelector<HTMLElement>('#color-swatch')!.style.backgroundColor = color;
   try { localStorage.setItem(brushColorKey, color); } catch { /* Drawing remains available when storage is disabled. */ }
-  presetPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', swatch.dataset.color === color));
-  savedPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', swatch.dataset.color === color));
-  updateMaterialPalette();
+  updateSelection();
 }
-function updateMaterialPalette(): void {
-  materialPalette.querySelectorAll<HTMLButtonElement>('.material-swatch').forEach((button) => button.classList.toggle('active', button.dataset.material === settings.material));
+function updateSelection(): void {
+  const selectingColor = settings.material === 'paint';
+  presetPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', selectingColor && swatch.dataset.color === settings.color));
+  savedPalette.querySelectorAll<HTMLButtonElement>('.swatch').forEach((swatch) => swatch.classList.toggle('active', selectingColor && swatch.dataset.color === settings.color));
+  materialPalette.querySelectorAll<HTMLButtonElement>('.material-swatch').forEach((button) => button.classList.toggle('active', !selectingColor && button.dataset.material === settings.material));
 }
-function setMaterial(material: 'paint' | 'silver-chrome' | 'copper-chrome'): void {
+function setMaterial(material: Material): void {
   settings.material = material;
   try { localStorage.setItem(brushMaterialKey, material); } catch { /* Drawing remains available when storage is disabled. */ }
-  updateMaterialPalette();
+  updateSelection();
 }
 function addSwatch(container: HTMLElement, color: string, removable = false): void {
   const wrapper = document.createElement('span');
@@ -239,7 +244,7 @@ function renderPalettes(): void {
   presetColors.forEach((color) => addSwatch(presetPalette, color));
   savedColors.forEach((color) => addSwatch(savedPalette, color, true));
   materialPalette.replaceChildren();
-  for (const [material, label, style] of [['silver-chrome', 'Silver Chrome', 'silver'], ['copper-chrome', 'Copper Chrome', 'copper']] as const) {
+  for (const [material, label, style] of [['silver-chrome', 'Silver Chrome', 'silver'], ['copper-chrome', 'Copper Chrome', 'copper'], ['gold-chrome', 'Gold Chrome', 'gold']] as const) {
     const button = document.createElement('button');
     button.type = 'button'; button.className = `material-swatch ${style}`; button.dataset.material = material; button.textContent = label;
     button.setAttribute('aria-label', `Select ${label}`); button.addEventListener('click', () => setMaterial(material));
@@ -253,7 +258,7 @@ try {
 } catch { /* Use the default brush color when storage is unavailable. */ }
 try {
   const storedMaterial = localStorage.getItem(brushMaterialKey);
-  if (storedMaterial === 'silver-chrome' || storedMaterial === 'copper-chrome') settings.material = storedMaterial;
+  if (storedMaterial === 'silver-chrome' || storedMaterial === 'copper-chrome' || storedMaterial === 'gold-chrome') settings.material = storedMaterial;
 } catch { /* Use ordinary paint when storage is unavailable. */ }
 renderPalettes();
 colorInput.addEventListener('input', () => setColor(colorInput.value));

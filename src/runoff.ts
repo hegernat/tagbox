@@ -189,6 +189,12 @@ export class RunoffEngine {
       const qy = (random() * 2 - 1) * size * 0.46;
       return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
     }
+    if (stroke.shape === 'split-chisel') {
+      const segment = random() < 1 / 3 ? [-size * 0.9, -size * 0.36] : [-size * 0.18, size * 0.9];
+      const qx = segment[0] + random() * (segment[1] - segment[0]);
+      const qy = (random() * 2 - 1) * size * 0.35 * 0.9;
+      return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
+    }
     const radial = Math.sqrt(random());
     const theta = random() * Math.PI * 2;
     const qx = size * 0.82 * radial * Math.cos(theta);
@@ -292,6 +298,28 @@ export class RunoffEngine {
       return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
     }
 
+    if (stroke.shape === 'split-chisel') {
+      const halfHeight = Math.max(0, size * 0.35 - inset);
+      if (halfHeight <= 0) return null;
+      const segments = [[-size * 0.9 + inset, -size * 0.36 - inset], [-size * 0.18 + inset, size * 0.9 - inset]];
+      const segment = segments[Math.random() < 1 / 3 ? 0 : 1];
+      if (segment[1] <= segment[0]) return null;
+      const corners = [
+        [segment[0], -halfHeight], [segment[1], -halfHeight],
+        [segment[1], halfHeight], [segment[0], halfHeight],
+      ];
+      let lowerEdge = 0; let lowerScreenY = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i]; const b = corners[(i + 1) % 4];
+        const averageScreenY = -((s * a[0] + c * a[1]) + (s * b[0] + c * b[1])) * 0.5;
+        if (averageScreenY > lowerScreenY) { lowerScreenY = averageScreenY; lowerEdge = i; }
+      }
+      const a = corners[lowerEdge]; const b = corners[(lowerEdge + 1) % 4];
+      const t = 0.15 + Math.random() * 0.7;
+      const qx = a[0] + (b[0] - a[0]) * t; const qy = a[1] + (b[1] - a[1]) * t;
+      return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
+    }
+
     const majorRadius = Math.max(0, size * 0.9 - inset);
     const minorRadius = Math.max(0, size * 0.35 - inset);
     if (majorRadius <= 0 || minorRadius <= 0) return null;
@@ -321,6 +349,13 @@ export class RunoffEngine {
     const qx = c * px + s * py;
     const qy = -s * px + c * py;
     if (stroke.shape === 'square') return Math.abs(qx * pointSize) <= size * 0.5 && Math.abs(qy * pointSize) <= size * 0.5;
+    if (stroke.shape === 'split-chisel') {
+      const localX = qx * pointSize;
+      const localY = qy * pointSize;
+      const inShortSegment = localX >= -size * 0.9 && localX <= -size * 0.36;
+      const inLongSegment = localX >= -size * 0.18 && localX <= size * 0.9;
+      return Math.abs(localY) <= size * 0.35 && (inShortSegment || inLongSegment);
+    }
     return qx * qx / 0.25 + qy * qy / 0.0378 <= 1;
   }
 

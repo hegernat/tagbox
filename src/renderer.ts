@@ -1,5 +1,8 @@
 import { RunoffEngine } from './runoff';
-import type { Dab, Point, Stroke } from './settings';
+import type { Dab, Material, Point, Stroke } from './settings';
+
+type ChromeMaterial = Exclude<Material, 'paint'>;
+const chromeMaterials: ChromeMaterial[] = ['silver-chrome', 'copper-chrome', 'gold-chrome'];
 
 const fullscreenVertex = `#version 300 es
 precision highp float;
@@ -11,51 +14,38 @@ in highp vec2 v_uv; out highp vec4 outColor; uniform highp sampler2D u_base;
 void main(){ outColor=vec4(texture(u_base,v_uv).rgb,1.0); }`;
 const chromeFragment = `#version 300 es
 precision highp float;
-in highp vec2 v_uv; uniform highp sampler2D u_mask; uniform highp int u_material; uniform highp vec2 u_logicalSize; out highp vec4 outColor;
+in highp vec2 v_uv; uniform highp sampler2D u_silverMask; uniform highp sampler2D u_copperMask; uniform highp sampler2D u_goldMask; out highp vec4 outColor;
 void main(){
-  float coverage=texture(u_mask,v_uv).a;
+  float silver=texture(u_silverMask,v_uv).a;
+  float copper=texture(u_copperMask,v_uv).a;
+  float gold=texture(u_goldMask,v_uv).a;
+  float coverage=1.0-(1.0-silver)*(1.0-copper)*(1.0-gold);
   if(coverage<=0.001) discard;
+  float tintWeight=max(silver+copper+gold,0.001);
+  vec3 tint=(silver*vec3(0.72,0.76,0.80)+copper*vec3(0.64,0.30,0.16)+gold*vec3(0.78,0.57,0.16))/tintWeight;
+  vec3 reflectionTint=(silver*vec3(1.0,1.0,1.0)+copper*vec3(1.0,0.74,0.53)+gold*vec3(1.0,0.87,0.52))/tintWeight;
   vec2 uv=vec2(v_uv.x,1.0-v_uv.y);
-  float band=0.34+0.075*smoothstep(0.08,0.30,sin(uv.y*6.283)*0.5+0.5)+0.068*smoothstep(0.40,0.66,sin(uv.y*12.566+0.7)*0.5+0.5)+0.018*sin(uv.y*18.85+uv.x*2.2);
+  float band=0.28+0.17*smoothstep(0.02,0.42,sin(uv.y*6.283)*0.5+0.5)+0.13*smoothstep(0.34,0.72,sin(uv.y*12.566+0.7)*0.5+0.5)+0.012*sin(uv.y*18.85+uv.x*2.2);
   float key=exp(-pow((uv.x-0.22)/0.16,2.0))*smoothstep(0.06,0.23,uv.y)*(1.0-smoothstep(0.72,0.94,uv.y));
   float strip=exp(-pow((uv.x-0.72)/0.11,2.0))*smoothstep(0.10,0.29,uv.y)*(1.0-smoothstep(0.58,0.82,uv.y));
   float box=exp(-pow((uv.x-0.48)/0.23,2.0)-pow((uv.y-0.13)/0.15,2.0));
   float studio=exp(-pow((uv.x-0.36)/0.035,2.0))*(0.62+0.38*sin(uv.y*5.1+0.6)*0.5+0.19);
-  float rimLight=exp(-pow((uv.x-0.86)/0.028,2.0))*(0.55+0.45*smoothstep(0.08,0.82,sin(uv.y*8.4+1.1)*0.5+0.5));
   float softbox=exp(-pow((uv.x-0.12)/0.022,2.0))*(0.68+0.32*sin(uv.y*4.4+0.8)*0.5+0.16);
   float stripLight=exp(-pow((uv.x-0.59)/0.018,2.0))*(0.58+0.42*smoothstep(0.1,0.86,sin(uv.y*6.8+uv.x*1.7)*0.5+0.5));
-  float value=clamp(band+0.22*key+0.17*strip+0.14*box+0.075*studio+0.055*rimLight+0.075*softbox+0.06*stripLight,0.22,0.90);
-
-  // Estimate the boundary normal from the already merged coverage. A short,
-  // logical-pixel neighborhood keeps this rim independent of brush diameter.
-  vec2 step1=vec2(3.0)/u_logicalSize;
-  float left=texture(u_mask,v_uv-vec2(step1.x,0.0)).a;
-  float right=texture(u_mask,v_uv+vec2(step1.x,0.0)).a;
-  float down=texture(u_mask,v_uv-vec2(0.0,step1.y)).a;
-  float up=texture(u_mask,v_uv+vec2(0.0,step1.y)).a;
-  vec2 inward=vec2(right-left,up-down);
-  float neighborMin=min(min(left,right),min(down,up));
-  float rim=(1.0-smoothstep(0.0,0.92,neighborMin))*smoothstep(0.08,0.42,length(inward));
-  vec2 normal=length(inward)>0.001?normalize(-inward):vec2(0.0);
-  vec2 lightDir=normalize(vec2(-0.55,0.75));
-  float highlight=max(dot(normal,lightDir),0.0)*rim;
-  float shadow=max(dot(normal,-lightDir),0.0)*rim;
-
-  vec3 tint=u_material==2?vec3(0.96,0.56,0.36):vec3(0.86,0.90,0.94);
-  float highlightLevel=smoothstep(0.55,0.90,value);
-  vec3 reflection=u_material==2?vec3(1.0,0.72,0.50):vec3(1.0,1.0,1.0);
-  vec3 color=mix(tint*value,reflection*value,highlightLevel*0.72);
-  color=color*(1.0-0.12*shadow)+vec3(0.085)*highlight;
+  float value=clamp(band+0.30*key+0.24*strip+0.18*box+0.12*studio+0.12*softbox+0.11*stripLight,0.24,1.15);
+  float reflectionLevel=smoothstep(0.24,0.84,value);
+  vec3 body=tint*(0.10+0.64*value);
+  vec3 color=mix(body,reflectionTint*value,0.82*reflectionLevel);
   outColor=vec4(color,coverage);
 }`;
 const dabVertex = `#version 300 es
 precision highp float; precision highp int;
 in highp vec3 a_dab; uniform highp vec2 u_targetSize; uniform highp vec2 u_scale; uniform highp float u_brushSize; uniform highp int u_shape; out highp float v_angle; out highp float v_brushSizePx; out highp float v_pointSize; out highp vec2 v_world;
-void main(){ vec2 p=a_dab.xy*u_scale; vec2 clip=p/u_targetSize*2.0-1.0; gl_Position=vec4(clip.x,-clip.y,0.0,1.0); v_world=p; v_angle=a_dab.z; v_brushSizePx=u_brushSize*u_scale.y; float c=abs(cos(a_dab.z)); float s=abs(sin(a_dab.z)); float extent=u_shape==2?1.8:u_shape==1?c+s:1.0; v_pointSize=max(1.0,v_brushSizePx*extent+(u_shape==1?2.0*u_scale.y:0.0)); gl_PointSize=v_pointSize; }`;
+void main(){ vec2 p=a_dab.xy*u_scale; vec2 clip=p/u_targetSize*2.0-1.0; gl_Position=vec4(clip.x,-clip.y,0.0,1.0); v_world=p; v_angle=a_dab.z; v_brushSizePx=u_brushSize*u_scale.y; float c=abs(cos(a_dab.z)); float s=abs(sin(a_dab.z)); float extent=(u_shape==2||u_shape==3)?1.8:u_shape==1?c+s:1.0; float pointSize=max(1.0,v_brushSizePx*extent+(u_shape==1?2.0*u_scale.y:0.0)); gl_PointSize=pointSize; v_pointSize=pointSize; }`;
 const baseFragment = `#version 300 es
 precision highp float; precision highp int;
 uniform highp vec3 u_color; uniform highp int u_shape; uniform highp int u_maskOnly; in highp float v_angle; in highp float v_brushSizePx; in highp float v_pointSize; out highp vec4 outColor;
-void main(){ vec2 p=gl_PointCoord-vec2(0.5); float coverage=1.0; if(u_shape==0 && dot(p,p)>0.25) discard; if(u_shape!=0){ float c=cos(v_angle); float s=sin(v_angle); vec2 q=vec2(c*p.x+s*p.y,-s*p.x+c*p.y); if(u_shape==1){ vec2 pixel=q*v_pointSize; float edge=v_brushSizePx*0.5-max(abs(pixel.x),abs(pixel.y)); coverage=clamp(edge+0.5,0.0,1.0); if(coverage<=0.0) discard; } else if((q.x*q.x)/(0.25)+(q.y*q.y)/(0.0378)>1.0) discard; } outColor=vec4(u_maskOnly==1?vec3(1.0):u_color,coverage); }`;
+void main(){ vec2 p=gl_PointCoord-vec2(0.5); float coverage=1.0; if(u_shape==0 && dot(p,p)>0.25) discard; if(u_shape!=0){ float c=cos(v_angle); float s=sin(v_angle); vec2 q=vec2(c*p.x+s*p.y,-s*p.x+c*p.y); if(u_shape==1){ vec2 pixel=q*v_pointSize; float edge=v_brushSizePx*0.5-max(abs(pixel.x),abs(pixel.y)); coverage=clamp(edge+0.5,0.0,1.0); if(coverage<=0.0) discard; } else if(u_shape==2){ if((q.x*q.x)/(0.25)+(q.y*q.y)/(0.0378)>1.0) discard; } else { bool inShortSegment=q.x>=-0.5 && q.x<=-0.2; bool inLongSegment=q.x>=-0.1 && q.x<=0.5; if(abs(q.y)>0.1944444 || !(inShortSegment || inLongSegment)) discard; } } outColor=vec4(u_maskOnly==1?vec3(1.0):u_color,coverage); }`;
 const runoffVertex = `#version 300 es
 precision highp float;
 in highp vec2 a_position; in highp vec3 a_color; uniform highp vec2 u_resolution; out highp vec3 v_color; out highp vec2 v_world;
@@ -77,8 +67,7 @@ export class CanvasRenderer {
   private readonly runoffGpuCache = new Map<Stroke, { buffer: WebGLBuffer; geometry: Float32Array }>();
   private baseTexture: WebGLTexture;
   private baseFramebuffer: WebGLFramebuffer;
-  private chromeMaskTexture: WebGLTexture;
-  private chromeMaskFramebuffer: WebGLFramebuffer;
+  private chromeMasks!: Record<ChromeMaterial, { texture: WebGLTexture; framebuffer: WebGLFramebuffer }>;
   private strokes: Stroke[] = [];
   private active: Stroke | null = null;
   private width = 1;
@@ -106,8 +95,10 @@ export class CanvasRenderer {
     this.dabBuffer = dabBuffer;
     this.baseTexture = this.createTexture(baseGl);
     this.baseFramebuffer = this.createFramebuffer(baseGl, this.baseTexture);
-    this.chromeMaskTexture = this.createTexture(baseGl);
-    this.chromeMaskFramebuffer = this.createFramebuffer(baseGl, this.chromeMaskTexture);
+    this.chromeMasks = Object.fromEntries(chromeMaterials.map((material) => {
+      const texture = this.createTexture(baseGl);
+      return [material, { texture, framebuffer: this.createFramebuffer(baseGl, texture) }];
+    })) as Record<ChromeMaterial, { texture: WebGLTexture; framebuffer: WebGLFramebuffer }>;
     baseGl.bindVertexArray(baseVao);
     baseGl.bindVertexArray(runoffVao);
     baseGl.disable(baseGl.BLEND);
@@ -185,8 +176,10 @@ export class CanvasRenderer {
     const gl = this.baseGl;
     gl.bindTexture(gl.TEXTURE_2D, this.baseTexture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, backingWidth, backingHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.bindTexture(gl.TEXTURE_2D, this.chromeMaskTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, backingWidth, backingHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const { texture } of Object.values(this.chromeMasks)) {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, backingWidth, backingHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
     this.replayBase();
     this.startRunoffAnimation();
   }
@@ -245,44 +238,48 @@ export class CanvasRenderer {
 
   private replayBase(): void {
     this.clearBase();
-    let chromeMaterial: Exclude<Stroke['material'], 'paint'> | null = null;
+    let chromeBatch = false;
     const drawStroke = (stroke: Stroke): void => {
       if (stroke.material !== 'paint') {
-        if (chromeMaterial !== stroke.material) {
-          if (chromeMaterial) this.compositeChrome(chromeMaterial);
-          chromeMaterial = stroke.material;
-          this.clearChromeMask();
+        if (!chromeBatch) {
+          chromeBatch = true;
+          this.clearChromeMasks();
         }
         this.drawBaseDabs(stroke.dabs, stroke, true);
         this.drawRunoffs(stroke, true);
         return;
       }
-      if (chromeMaterial) { this.compositeChrome(chromeMaterial); chromeMaterial = null; }
+      if (chromeBatch) { this.compositeChrome(); chromeBatch = false; }
       this.drawBaseDabs(stroke.dabs, stroke);
       this.drawRunoffs(stroke);
     };
     for (const stroke of this.strokes) drawStroke(stroke);
     if (this.active) drawStroke(this.active);
-    if (chromeMaterial) this.compositeChrome(chromeMaterial);
+    if (chromeBatch) this.compositeChrome();
     this.presentBase();
   }
 
-  private clearChromeMask(): void {
+  private clearChromeMasks(): void {
     const gl = this.baseGl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.chromeMaskFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(0, 0, 0, 0);
+    for (const { framebuffer } of Object.values(this.chromeMasks)) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
   }
 
-  private compositeChrome(material: Exclude<Stroke['material'], 'paint'>): void {
+  private compositeChrome(): void {
     const gl = this.baseGl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.baseFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.chromeProgram);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.chromeMaskTexture);
-    gl.uniform1i(gl.getUniformLocation(this.chromeProgram, 'u_mask'), 0);
-    gl.uniform1i(gl.getUniformLocation(this.chromeProgram, 'u_material'), material === 'silver-chrome' ? 1 : 2);
-    gl.uniform2f(gl.getUniformLocation(this.chromeProgram, 'u_logicalSize'), this.width, this.height);
+    chromeMaterials.forEach((material, index) => {
+      gl.activeTexture(gl.TEXTURE0 + index);
+      gl.bindTexture(gl.TEXTURE_2D, this.chromeMasks[material].texture);
+      const uniformName = material === 'silver-chrome' ? 'u_silverMask' : material === 'copper-chrome' ? 'u_copperMask' : 'u_goldMask';
+      gl.uniform1i(gl.getUniformLocation(this.chromeProgram, uniformName), index);
+    });
     gl.bindVertexArray(this.baseVao);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -308,13 +305,13 @@ export class CanvasRenderer {
     gl.bindVertexArray(this.baseVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.dabBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, maskOnly ? this.chromeMaskFramebuffer : this.baseFramebuffer);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, maskOnly ? this.chromeMasks[stroke.material as ChromeMaterial].framebuffer : this.baseFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.baseProgram);
     gl.uniform2f(gl.getUniformLocation(this.baseProgram, 'u_targetSize'), this.canvas.width, this.canvas.height);
     gl.uniform2f(gl.getUniformLocation(this.baseProgram, 'u_scale'), this.canvas.width / this.width, this.canvas.height / this.height);
     gl.uniform1f(gl.getUniformLocation(this.baseProgram, 'u_brushSize'), first.size);
-    gl.uniform1i(gl.getUniformLocation(this.baseProgram, 'u_shape'), stroke.shape === 'round' ? 0 : stroke.shape === 'square' ? 1 : 2);
+    gl.uniform1i(gl.getUniformLocation(this.baseProgram, 'u_shape'), stroke.shape === 'round' ? 0 : stroke.shape === 'square' ? 1 : stroke.shape === 'chisel' ? 2 : 3);
     gl.uniform1i(gl.getUniformLocation(this.baseProgram, 'u_maskOnly'), maskOnly ? 1 : 0);
     gl.uniform3fv(gl.getUniformLocation(this.baseProgram, 'u_color'), this.parseColor(first.color));
     const attribute = gl.getAttribLocation(this.baseProgram, 'a_dab');
@@ -330,6 +327,8 @@ export class CanvasRenderer {
     const geometry = this.runoffEngine.geometry(stroke);
     if (!geometry.length) return;
     const gl = this.baseGl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, maskOnly ? this.chromeMasks[stroke.material as ChromeMaterial].framebuffer : this.baseFramebuffer);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.runoffProgram);
     gl.uniform2f(gl.getUniformLocation(this.runoffProgram, 'u_resolution'), this.width, this.height);
     gl.uniform1i(gl.getUniformLocation(this.runoffProgram, 'u_maskOnly'), maskOnly ? 1 : 0);
