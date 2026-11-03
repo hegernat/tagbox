@@ -70,11 +70,14 @@ export class CanvasRenderer {
   private chromeMasks!: Record<ChromeMaterial, { texture: WebGLTexture; framebuffer: WebGLFramebuffer }>;
   private strokes: Stroke[] = [];
   private active: Stroke | null = null;
+  private incrementallyRenderedStroke: Stroke | null = null;
+  private incrementallyRenderedDabCount = 0;
   private width = 1;
   private height = 1;
   private runoffEngine = new RunoffEngine();
   private raf = 0;
   private renderRaf = 0;
+  private renderReplayRequired = false;
   private lastFrame = 0;
   private backgroundColor = '#000000';
 
@@ -193,17 +196,31 @@ export class CanvasRenderer {
 
   setActive(stroke: Stroke | null, newDabs: Dab[] = []): void {
     this.active = stroke;
+    if (this.incrementallyRenderedStroke !== stroke) {
+      this.incrementallyRenderedStroke = stroke?.material === 'paint' ? stroke : null;
+      this.incrementallyRenderedDabCount = 0;
+    }
     if (!newDabs.length || !stroke) return;
     this.runoffEngine.addDabs(stroke, newDabs, performance.now(), this.width, this.height);
-    // Always queue visible stroke updates independently of the runoff animation loop.
-    // The animation may already have a frame pending, but it is not responsible for
-    // presenting newly received pointer dabs.
-    this.scheduleRender();
+    if (stroke.material === 'paint') {
+      // Draw only the dabs delivered in this batch; prior active dabs are already in the base.
+      const batchStart = stroke.dabs.length - newDabs.length;
+      const alreadyRenderedInBatch = Math.max(0, this.incrementallyRenderedDabCount - batchStart);
+      const dabsToRender = newDabs.slice(alreadyRenderedInBatch);
+      if (dabsToRender.length) this.drawBaseDabs(dabsToRender, stroke);
+      this.incrementallyRenderedStroke = stroke;
+      this.incrementallyRenderedDabCount = Math.max(this.incrementallyRenderedDabCount, stroke.dabs.length);
+      this.scheduleRender(false);
+    } else {
+      this.scheduleRender(true);
+    }
   }
 
   commitStroke(stroke: Stroke): void {
     if (this.strokes.at(-1) !== stroke) this.strokes.push(stroke);
     this.active = null;
+    this.incrementallyRenderedStroke = null;
+    this.incrementallyRenderedDabCount = 0;
   }
 
   setStrokes(strokes: Stroke[]): void {
@@ -221,6 +238,9 @@ export class CanvasRenderer {
 
   clear(): void {
     this.strokes = []; this.active = null; this.runoffEngine.clear();
+    this.incrementallyRenderedStroke = null;
+    this.incrementallyRenderedDabCount = 0;
+    this.renderReplayRequired = false;
     for (const cached of this.runoffGpuCache.values()) this.baseGl.deleteBuffer(cached.buffer);
     this.runoffGpuCache.clear();
     if (this.raf) cancelAnimationFrame(this.raf);
@@ -257,6 +277,8 @@ export class CanvasRenderer {
     if (this.active) drawStroke(this.active);
     if (chromeBatch) this.compositeChrome();
     this.presentBase();
+    this.incrementallyRenderedStroke = this.active?.material === 'paint' ? this.active : null;
+    this.incrementallyRenderedDabCount = this.incrementallyRenderedStroke?.dabs.length ?? 0;
   }
 
   private clearChromeMasks(): void {
@@ -287,11 +309,15 @@ export class CanvasRenderer {
     gl.disable(gl.BLEND);
   }
 
-  private scheduleRender(): void {
+  private scheduleRender(replay: boolean): void {
+    this.renderReplayRequired ||= replay;
     if (this.renderRaf) return;
     this.renderRaf = requestAnimationFrame(() => {
       this.renderRaf = 0;
-      this.replayBase();
+      const replayRequired = this.renderReplayRequired;
+      this.renderReplayRequired = false;
+      if (replayRequired) this.replayBase();
+      else this.presentBase();
       this.startRunoffAnimation();
     });
   }
