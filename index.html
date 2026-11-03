@@ -9,9 +9,8 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="Tagbox startsida"><span class="brand-mark">t</span><span>TAGBOX <span id="brand-version"></span></span></a>
-        <div class="document-name"><span class="live-dot"></span> Untitled canvas <span class="saved-label">· All changes saved</span></div>
-        <div class="top-actions"><span class="workspace-label">STUDIO / 01</span><button id="canvas-mode-button" class="mode-button" type="button">Canvas Only</button><button id="clear-button" class="icon-button clear-button" type="button" title="Töm canvas" aria-label="Töm canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+        <a class="brand" href="#" aria-label="Tagbox startsida"><span>TAGBOX <span id="brand-version"></span></span></a>
+        <div class="top-actions"><button id="canvas-mode-button" class="mode-button" type="button">Canvas Only</button><button id="help-button" class="icon-button help-button" type="button" title="Help" aria-label="Open help">?</button><button id="clear-button" class="icon-button clear-button" type="button" title="Töm canvas" aria-label="Töm canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
       </header>
       <main class="workspace">
         <section class="canvas-stage" aria-label="Rityta">
@@ -21,7 +20,6 @@
           <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Tillbaka till Studio">Studio <kbd>Esc</kbd></button>
         </section>
         <aside class="toolbar" aria-label="Penselinställningar">
-          <div class="tool-section tool-heading"><span class="section-kicker">TOOLS</span><span class="section-count">01 — 03</span></div>
           <div class="tool-group brush-shape-group">
             <div class="control-label"><span class="shape-label">Brush tip</span></div>
             <div class="brush-shape-picker" role="group" aria-label="Välj penselspets">
@@ -33,10 +31,10 @@
           </div>
           <div id="rotation-group" class="tool-group rotation-group" hidden>
             <div class="control-label"><span class="shape-label">Tip rotation</span><output id="rotation-value">0°</output></div>
-            <button id="rotation-dial" class="rotation-dial" type="button" role="slider" aria-label="Brush tip rotation" aria-valuemin="0" aria-valuemax="180" aria-valuenow="0">
+            <button id="rotation-dial" class="rotation-dial" type="button" role="slider" aria-label="Brush tip rotation" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0">
               <span class="rotation-tip-preview" aria-hidden="true"></span><span class="rotation-dial-center" aria-hidden="true"></span>
             </button>
-            <div class="range-ends"><span>0°</span><span>180°</span></div>
+            <div class="range-ends"><span>0°</span><span>360°</span></div>
           </div>
           <div class="tool-group">
             <div class="control-label"><label for="brush-size">Brush size</label><output id="size-value" for="brush-size">10 px</output></div>
@@ -44,8 +42,8 @@
             <div class="range-ends"><span>2</span><span>96</span></div>
           </div>
           <div class="tool-group smoothing-group">
-            <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">12%</output></div>
-            <input id="smoothing" class="range-input" type="range" min="0" max="100" value="12" />
+            <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">50%</output></div>
+            <input id="smoothing" class="range-input" type="range" min="0" max="100" value="50" />
             <div class="range-ends"><span>Raw</span><span>Steady</span></div>
           </div>
           <div class="tool-group wet-group">
@@ -76,6 +74,33 @@
           <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button></div>
         </aside>
       </main>
+      <dialog id="help-dialog" class="help-dialog" aria-labelledby="help-title">
+        <div class="help-heading"><h1 id="help-title">Quick guide</h1><button id="help-close" class="help-close" type="button" aria-label="Close help">×</button></div>
+        <section class="help-section">
+          <h2>Drawing</h2>
+          <ul>
+            <li>Drag on the canvas to paint.</li>
+            <li>Change brush tip, size and rotation.</li>
+            <li>Adjust stroke smoothing and paint load.</li>
+            <li>Choose a paint color or Chrome material.</li>
+          </ul>
+        </section>
+        <section class="help-section">
+          <h2>Gestures</h2>
+          <div class="help-gesture"><span>One finger / mouse</span><span>Draw on canvas</span></div>
+          <div class="help-gesture"><span>Two fingers</span><span>Undo last stroke</span></div>
+          <div class="help-gesture help-destructive"><span>Three fingers</span><span>Clear entire canvas</span></div>
+          <p class="help-note">Two- and three-finger gestures require a stationary press and release. Movement cancels the gesture.</p>
+        </section>
+        <section class="help-section">
+          <h2>Other controls</h2>
+          <ul>
+            <li>Use Undo or Ctrl+Z (⌘Z on Mac) to undo.</li>
+            <li>Use Canvas Only to hide the toolbar.</li>
+            <li>Use the trash button to clear the entire canvas.</li>
+          </ul>
+        </section>
+      </dialog>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

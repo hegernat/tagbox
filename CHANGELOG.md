@@ -2,6 +2,20 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.5.0] - 2026-11-03
+
+### Added
+
+- Stationary two-finger undo and three-finger canvas-clear gestures on touchscreens, with movement cancelling the gesture.
+- Help button and compact quick guide covering drawing, gestures and other controls.
+
+### Changed
+
+- Extended brush-tip rotation to the full 0°–360° range with continuous dial movement.
+- Made the Split Chisel tip slightly thinner while preserving its segment gap and aligning rendered geometry, preview and runoff sampling.
+- Set default stroke smoothing to 50% without overriding saved user preferences.
+- Simplified the interface by removing decorative top-bar and tools-panel labels, the white T mark and the center document-status text.
+
 ## [0.4.0] - 2026-11-02
 
 ### Added

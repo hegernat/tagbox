@@ -29,6 +29,9 @@ const saveColorButton = document.querySelector<HTMLButtonElement>('#save-color-b
 const undoButton = document.querySelector<HTMLButtonElement>('#undo-button')!;
 const appShell = document.querySelector<HTMLElement>('.app-shell')!;
 const modeButton = document.querySelector<HTMLButtonElement>('#canvas-mode-button')!;
+const helpButton = document.querySelector<HTMLButtonElement>('#help-button')!;
+const helpDialog = document.querySelector<HTMLDialogElement>('#help-dialog')!;
+const helpCloseButton = document.querySelector<HTMLButtonElement>('#help-close')!;
 const exitCanvasButton = document.querySelector<HTMLButtonElement>('#canvas-exit-button')!;
 const screenOrientation = screen.orientation as ScreenOrientation & { lock?: (orientation: 'landscape') => Promise<void> };
 const shapeRotations: Record<'square' | 'chisel' | 'split-chisel', number> = { square: 0, chisel: 30, 'split-chisel': 30 };
@@ -37,6 +40,11 @@ let holdTimer = 0;
 let activePointerId: number | null = null;
 let lastCanvasPointer: PointerEvent | null = null;
 let rotationPointerId: number | null = null;
+let rotationLastPointerAngle: number | null = null;
+const touchCandidates = new Map<number, PointerEvent>();
+let touchCandidateCount = 0;
+let touchCandidateCanceled = false;
+const gestureMoveThreshold = 8;
 
 function updateBrushCursor(event: PointerEvent): void {
   lastCanvasPointer = event;
@@ -50,7 +58,7 @@ function updateBrushCursor(event: PointerEvent): void {
   brushCursor.style.top = `${event.clientY - stageRect.top - stage.clientTop}px`;
   const isChisel = settings.shape === 'chisel' || settings.shape === 'split-chisel';
   brushCursorTip.style.width = `${size * (isChisel ? 1.8 : 1)}px`;
-  brushCursorTip.style.height = `${size * (isChisel ? 0.7 : 1)}px`;
+  brushCursorTip.style.height = `${size * (isChisel ? (settings.shape === 'split-chisel' ? 0.62 : 0.7) : 1)}px`;
   brushCursorTip.dataset.shape = settings.shape;
   brushCursorTip.dataset.material = settings.material;
   brushCursorTip.style.transform = `translate(-50%, -50%) rotate(${settings.shape === 'round' ? 0 : settings.rotationDegrees}deg)`;
@@ -58,7 +66,7 @@ function updateBrushCursor(event: PointerEvent): void {
 }
 
 function setRotation(degrees: number): void {
-  settings.rotationDegrees = Math.max(0, Math.min(180, Math.round(degrees)));
+  settings.rotationDegrees = Math.max(0, Math.min(360, Math.round(degrees)));
   if (settings.shape !== 'round') shapeRotations[settings.shape] = settings.rotationDegrees;
   rotationValue.textContent = `${settings.rotationDegrees}°`;
   rotationDial.setAttribute('aria-valuenow', String(settings.rotationDegrees));
@@ -67,12 +75,24 @@ function setRotation(degrees: number): void {
   if (lastCanvasPointer) updateBrushCursor(lastCanvasPointer);
 }
 
-function setRotationFromPointer(event: PointerEvent): void {
+function pointerRotationAngle(event: PointerEvent): number {
   const rect = rotationDial.getBoundingClientRect();
   const dx = event.clientX - (rect.left + rect.width / 2);
   const dy = event.clientY - (rect.top + rect.height / 2);
   const aroundDial = Math.atan2(dy, dx) * 180 / Math.PI + 90;
-  setRotation(((aroundDial % 180) + 180) % 180);
+  return ((aroundDial % 360) + 360) % 360;
+}
+function setRotationFromPointer(event: PointerEvent): void {
+  const angle = pointerRotationAngle(event);
+  if (rotationLastPointerAngle === null) {
+    setRotation(angle);
+  } else {
+    let delta = angle - rotationLastPointerAngle;
+    if (delta > 180) delta -= 360;
+    else if (delta < -180) delta += 360;
+    setRotation(settings.rotationDegrees + delta);
+  }
+  rotationLastPointerAngle = angle;
 }
 
 function resizeCanvas(): void {
@@ -90,18 +110,42 @@ window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', resizeCanvas);
 resizeCanvas();
 
+function startStroke(event: PointerEvent, initialEvent = event): void {
+  if (isDrawing) return;
+  isDrawing = true;
+  activePointerId = event.pointerId;
+  brush.begin(pointerPosition(initialEvent, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), initialEvent.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material, settings.rotationDegrees, settings.splatterEnabled);
+  holdTimer = window.setInterval(() => { if (isDrawing) brush.hold(); }, 60);
+}
+function clearCanvas(): void {
+  if (isDrawing) finishStroke();
+  strokes.length = 0; renderer.clear(); undoButton.disabled = true;
+}
 canvas.addEventListener('pointerdown', (event) => {
   if (isDrawing || event.button !== 0) return;
   event.preventDefault();
   canvas.setPointerCapture(event.pointerId);
-  isDrawing = true;
-  activePointerId = event.pointerId;
-  brush.begin(pointerPosition(event, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), event.timeStamp, settings.size, settings.color, settings.smoothing, settings.wetness, settings.shape, settings.material, settings.rotationDegrees, settings.splatterEnabled);
-  holdTimer = window.setInterval(() => { if (isDrawing) brush.hold(); }, 60);
+  if (event.pointerType === 'touch') {
+    if (touchCandidateCanceled) return;
+    touchCandidates.set(event.pointerId, event);
+    touchCandidateCount = Math.max(touchCandidateCount, touchCandidates.size);
+    return;
+  }
+  touchCandidates.clear(); touchCandidateCount = 0; touchCandidateCanceled = false;
+  startStroke(event);
 });
 canvas.addEventListener('pointerenter', updateBrushCursor);
 canvas.addEventListener('pointermove', (event) => {
   updateBrushCursor(event);
+  const candidate = touchCandidates.get(event.pointerId);
+  if (candidate && Math.hypot(event.clientX - candidate.clientX, event.clientY - candidate.clientY) > gestureMoveThreshold) {
+    if (touchCandidates.size === 1 && touchCandidateCount === 1) {
+      touchCandidates.clear(); touchCandidateCount = 0;
+      startStroke(event, candidate);
+    } else {
+      touchCandidateCanceled = true;
+    }
+  }
   if (!isDrawing || event.pointerId !== activePointerId) return;
   const coalesced = [...(event.getCoalescedEvents?.() ?? [event])].sort((a, b) => a.timeStamp - b.timeStamp);
   for (const sample of coalesced) brush.move(pointerPosition(sample, canvas, CANVAS_WIDTH, CANVAS_HEIGHT), sample.timeStamp);
@@ -117,8 +161,31 @@ function finishStroke(event?: PointerEvent): void {
   const stroke = brush.end();
   if (stroke) { strokes.push(stroke); renderer.commitStroke(stroke); undoButton.disabled = false; }
 }
-canvas.addEventListener('pointerup', (event) => finishStroke(event));
-canvas.addEventListener('pointercancel', (event) => finishStroke(event));
+canvas.addEventListener('pointerup', (event) => {
+  if (touchCandidates.has(event.pointerId)) {
+    if (touchCandidateCount === 1) {
+      const initial = touchCandidates.get(event.pointerId)!;
+      startStroke(event, initial);
+      finishStroke(event);
+    }
+    touchCandidates.delete(event.pointerId);
+    if (!touchCandidates.size) {
+      if (!touchCandidateCanceled && touchCandidateCount === 2) undo();
+      else if (!touchCandidateCanceled && touchCandidateCount === 3) clearCanvas();
+      touchCandidateCount = 0; touchCandidateCanceled = false;
+    }
+    return;
+  }
+  finishStroke(event);
+});
+canvas.addEventListener('pointercancel', (event) => {
+  if (touchCandidates.has(event.pointerId)) {
+    touchCandidates.delete(event.pointerId); touchCandidateCanceled = true;
+    if (!touchCandidates.size) { touchCandidateCount = 0; touchCandidateCanceled = false; }
+    return;
+  }
+  finishStroke(event);
+});
 canvas.addEventListener('lostpointercapture', () => finishStroke());
 
 async function enterCanvasOnly(): Promise<void> {
@@ -143,6 +210,17 @@ async function exitCanvasOnly(): Promise<void> {
 }
 modeButton.addEventListener('click', () => appShell.classList.contains('canvas-only') ? void exitCanvasOnly() : void enterCanvasOnly());
 exitCanvasButton.addEventListener('click', () => void exitCanvasOnly());
+helpButton.addEventListener('click', () => {
+  helpDialog.showModal();
+  helpCloseButton.focus();
+});
+helpCloseButton.addEventListener('click', () => helpDialog.close());
+helpDialog.addEventListener('click', (event) => {
+  if (event.target !== helpDialog) return;
+  const rect = helpDialog.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) helpDialog.close();
+});
+helpDialog.addEventListener('close', () => helpButton.focus());
 document.addEventListener('fullscreenchange', () => {
   resizeCanvas();
   if (!document.fullscreenElement && appShell.classList.contains('canvas-only')) {
@@ -299,13 +377,14 @@ document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((but
 rotationDial.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   rotationPointerId = event.pointerId;
+  rotationLastPointerAngle = null;
   rotationDial.setPointerCapture(event.pointerId);
   setRotationFromPointer(event);
 });
 rotationDial.addEventListener('pointermove', (event) => {
   if (event.pointerId === rotationPointerId) setRotationFromPointer(event);
 });
-const stopRotation = (event: PointerEvent): void => { if (event.pointerId === rotationPointerId) rotationPointerId = null; };
+const stopRotation = (event: PointerEvent): void => { if (event.pointerId === rotationPointerId) { rotationPointerId = null; rotationLastPointerAngle = null; } };
 rotationDial.addEventListener('pointerup', stopRotation);
 rotationDial.addEventListener('pointercancel', stopRotation);
 rotationDial.addEventListener('keydown', (event) => {
@@ -313,18 +392,16 @@ rotationDial.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowRight' || event.key === 'ArrowUp') { event.preventDefault(); setRotation(settings.rotationDegrees + step); }
   else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') { event.preventDefault(); setRotation(settings.rotationDegrees - step); }
   else if (event.key === 'Home') { event.preventDefault(); setRotation(0); }
-  else if (event.key === 'End') { event.preventDefault(); setRotation(180); }
+  else if (event.key === 'End') { event.preventDefault(); setRotation(360); }
 });
 function undo(): void {
   if (!strokes.length) return;
   strokes.pop(); renderer.setStrokes(strokes); undoButton.disabled = strokes.length === 0;
 }
 undoButton.addEventListener('click', undo);
-document.querySelector('#clear-button')!.addEventListener('click', () => {
-  if (isDrawing) finishStroke();
-  strokes.length = 0; renderer.clear(); undoButton.disabled = true;
-});
+document.querySelector('#clear-button')!.addEventListener('click', clearCanvas);
 document.addEventListener('keydown', (event) => {
+  if (helpDialog.open) return;
   if (event.key === 'Escape' && appShell.classList.contains('canvas-only')) { void exitCanvasOnly(); return; }
   if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
   const target = event.target;

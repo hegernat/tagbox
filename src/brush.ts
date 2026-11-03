@@ -18,7 +18,7 @@ export class BrushEngine {
   begin(point: Point, time: number, size: number, color: string, smoothing: number, wetness: number, shape: BrushShape = 'round', material: Material = 'paint', rotationDegrees = shape === 'chisel' || shape === 'split-chisel' ? DEFAULT_CHISEL_ROTATION_DEGREES : 0, splatterEnabled = true): void {
     // Store orientation on the stroke so later rotation controls can override it
     // without tying the nib to pointer motion.
-    const rotation = shape === 'round' ? 0 : Math.max(0, Math.min(180, rotationDegrees)) * Math.PI / 180;
+    const rotation = shape === 'round' ? 0 : ((rotationDegrees % 360) + 360) % 360 * Math.PI / 180;
     this.active = { points: [point], dabs: [], splatter: [], splatterEnabled, size, color, material, shape, rotation };
     this.filter = new PointerFilter(smoothing);
     this.interpolator = new StrokeInterpolator(Math.max(0.7, size * 0.12));

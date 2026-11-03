@@ -192,7 +192,7 @@ export class RunoffEngine {
     if (stroke.shape === 'split-chisel') {
       const segment = random() < 1 / 3 ? [-size * 0.9, -size * 0.36] : [-size * 0.18, size * 0.9];
       const qx = segment[0] + random() * (segment[1] - segment[0]);
-      const qy = (random() * 2 - 1) * size * 0.35 * 0.9;
+      const qy = (random() * 2 - 1) * size * 0.31 * 0.9;
       return { x: dab.x + c * qx - s * qy, y: dab.y - (s * qx + c * qy) };
     }
     const radial = Math.sqrt(random());
@@ -299,7 +299,7 @@ export class RunoffEngine {
     }
 
     if (stroke.shape === 'split-chisel') {
-      const halfHeight = Math.max(0, size * 0.35 - inset);
+      const halfHeight = Math.max(0, size * 0.31 - inset);
       if (halfHeight <= 0) return null;
       const segments = [[-size * 0.9 + inset, -size * 0.36 - inset], [-size * 0.18 + inset, size * 0.9 - inset]];
       const segment = segments[Math.random() < 1 / 3 ? 0 : 1];
@@ -354,7 +354,7 @@ export class RunoffEngine {
       const localY = qy * pointSize;
       const inShortSegment = localX >= -size * 0.9 && localX <= -size * 0.36;
       const inLongSegment = localX >= -size * 0.18 && localX <= size * 0.9;
-      return Math.abs(localY) <= size * 0.35 && (inShortSegment || inLongSegment);
+      return Math.abs(localY) <= size * 0.31 && (inShortSegment || inLongSegment);
     }
     return qx * qx / 0.25 + qy * qy / 0.0378 <= 1;
   }
