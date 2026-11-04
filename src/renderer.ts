@@ -3,7 +3,6 @@ import type { Dab, Material, Point, Stroke } from './settings';
 
 type ChromeMaterial = Exclude<Material, 'paint'>;
 const chromeMaterials: ChromeMaterial[] = ['silver-chrome', 'copper-chrome', 'gold-chrome'];
-
 const fullscreenVertex = `#version 300 es
 precision highp float;
 out highp vec2 v_uv;
@@ -64,7 +63,7 @@ export class CanvasRenderer {
   private baseVao: WebGLVertexArrayObject;
   private runoffVao: WebGLVertexArrayObject;
   private dabBuffer: WebGLBuffer;
-  private readonly runoffGpuCache = new Map<Stroke, { buffer: WebGLBuffer; geometry: Float32Array }>();
+  private readonly runoffGpuCache = new Map<object, { buffer: WebGLBuffer; geometry: Float32Array }>();
   private baseTexture: WebGLTexture;
   private baseFramebuffer: WebGLFramebuffer;
   private chromeMasks!: Record<ChromeMaterial, { texture: WebGLTexture; framebuffer: WebGLFramebuffer }>;
@@ -226,11 +225,10 @@ export class CanvasRenderer {
   setStrokes(strokes: Stroke[]): void {
     this.strokes = [...strokes];
     const retained = this.active ? [...this.strokes, this.active] : this.strokes;
-    this.runoffEngine.retain(retained);
-    const keep = new Set(retained);
-    for (const [stroke, cached] of this.runoffGpuCache) if (!keep.has(stroke)) {
+    const keep = this.runoffEngine.retain(retained);
+    for (const [component, cached] of this.runoffGpuCache) if (!keep.has(component)) {
       this.baseGl.deleteBuffer(cached.buffer);
-      this.runoffGpuCache.delete(stroke);
+      this.runoffGpuCache.delete(component);
     }
     this.replayBase();
     this.startRunoffAnimation();
@@ -350,40 +348,48 @@ export class CanvasRenderer {
   }
 
   private drawRunoffs(stroke: Stroke, maskOnly = false): void {
-    const geometry = this.runoffEngine.geometry(stroke);
-    if (!geometry.length) return;
     const gl = this.baseGl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, maskOnly ? this.chromeMasks[stroke.material as ChromeMaterial].framebuffer : this.baseFramebuffer);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.runoffProgram);
-    gl.uniform2f(gl.getUniformLocation(this.runoffProgram, 'u_resolution'), this.width, this.height);
-    gl.uniform1i(gl.getUniformLocation(this.runoffProgram, 'u_maskOnly'), maskOnly ? 1 : 0);
-    gl.bindVertexArray(this.runoffVao);
-    let cached = this.runoffGpuCache.get(stroke);
-    if (!cached) {
-      const buffer = gl.createBuffer();
-      if (!buffer) throw new Error('Could not allocate runoff geometry buffer.');
-      cached = { buffer, geometry };
-      this.runoffGpuCache.set(stroke, cached);
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, geometry, gl.STATIC_DRAW);
-    } else if (cached.geometry !== geometry) {
-      cached.geometry = geometry;
+    let drawingInitialized = false;
+    let position = 0;
+    let color = 0;
+    this.runoffEngine.forEachGeometry(stroke, (component, geometry) => {
+      if (!geometry.length) return;
+      if (!drawingInitialized) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, maskOnly ? this.chromeMasks[stroke.material as ChromeMaterial].framebuffer : this.baseFramebuffer);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.useProgram(this.runoffProgram);
+        gl.uniform2f(gl.getUniformLocation(this.runoffProgram, 'u_resolution'), this.width, this.height);
+        gl.uniform1i(gl.getUniformLocation(this.runoffProgram, 'u_maskOnly'), maskOnly ? 1 : 0);
+        gl.bindVertexArray(this.runoffVao);
+        position = gl.getAttribLocation(this.runoffProgram, 'a_position');
+        color = gl.getAttribLocation(this.runoffProgram, 'a_color');
+        gl.enableVertexAttribArray(position);
+        gl.enableVertexAttribArray(color);
+        if (maskOnly) {
+          gl.enable(gl.BLEND);
+          gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        } else gl.disable(gl.BLEND);
+        drawingInitialized = true;
+      }
+      let cached = this.runoffGpuCache.get(component);
+      if (!cached) {
+        const buffer = gl.createBuffer();
+        if (!buffer) throw new Error('Could not allocate runoff geometry buffer.');
+        cached = { buffer, geometry };
+        this.runoffGpuCache.set(component, cached);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry, gl.STATIC_DRAW);
+      } else if (cached.geometry !== geometry) {
+        cached.geometry = geometry;
+        gl.bindBuffer(gl.ARRAY_BUFFER, cached.buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, geometry, gl.DYNAMIC_DRAW);
+      }
       gl.bindBuffer(gl.ARRAY_BUFFER, cached.buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, geometry, gl.DYNAMIC_DRAW);
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, cached.buffer);
-    const position = gl.getAttribLocation(this.runoffProgram, 'a_position');
-    const color = gl.getAttribLocation(this.runoffProgram, 'a_color');
-    gl.enableVertexAttribArray(position); gl.enableVertexAttribArray(color);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 20, 0);
-    gl.vertexAttribPointer(color, 3, gl.FLOAT, false, 20, 8);
-    if (maskOnly) {
-      gl.enable(gl.BLEND);
-      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    } else gl.disable(gl.BLEND);
-    gl.drawArrays(gl.TRIANGLES, 0, geometry.length / 5);
-    if (maskOnly) gl.disable(gl.BLEND);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 20, 0);
+      gl.vertexAttribPointer(color, 3, gl.FLOAT, false, 20, 8);
+      gl.drawArrays(gl.TRIANGLES, 0, geometry.length / 5);
+    });
+    if (drawingInitialized && maskOnly) gl.disable(gl.BLEND);
   }
 
   private startRunoffAnimation(): void {

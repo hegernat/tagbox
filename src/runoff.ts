@@ -34,11 +34,60 @@ interface CandidateState {
   randomSeed: number;
 }
 
+class GeometryWriter {
+  private buffer = new Float32Array(0);
+  length = 0;
+
+  triangle(
+    ax: number, ay: number,
+    bx: number, by: number,
+    cx: number, cy: number,
+    color: [number, number, number],
+  ): void {
+    this.ensureCapacity(this.length + 15);
+    const vertices = this.buffer;
+    let index = this.length;
+    vertices[index++] = ax; vertices[index++] = ay;
+    vertices[index++] = color[0]; vertices[index++] = color[1]; vertices[index++] = color[2];
+    vertices[index++] = bx; vertices[index++] = by;
+    vertices[index++] = color[0]; vertices[index++] = color[1]; vertices[index++] = color[2];
+    vertices[index++] = cx; vertices[index++] = cy;
+    vertices[index++] = color[0]; vertices[index++] = color[1]; vertices[index++] = color[2];
+    this.length = index;
+  }
+
+  finish(): Float32Array {
+    return this.buffer.subarray(0, this.length);
+  }
+
+  append(vertices: Float32Array): void {
+    if (!vertices.length) return;
+    this.ensureCapacity(this.length + vertices.length);
+    this.buffer.set(vertices, this.length);
+    this.length += vertices.length;
+  }
+
+  reset(): void {
+    this.length = 0;
+  }
+
+  private ensureCapacity(required: number): void {
+    if (required <= this.buffer.length) return;
+    const capacity = Math.max(required, this.buffer.length === 0 ? 64 : this.buffer.length * 2);
+    const grown = new Float32Array(capacity);
+    grown.set(this.buffer.subarray(0, this.length));
+    this.buffer = grown;
+  }
+}
+
 /** Sparse paint channels and joined runoff sheets, grouped by their source stroke. */
 export class RunoffEngine {
   private readonly byStroke = new Map<Stroke, Run[]>();
   private readonly candidates = new Map<Stroke, CandidateState>();
-  private readonly geometryCache = new Map<Stroke, Float32Array>();
+  private readonly componentGeometryCache = new Map<object, Float32Array>();
+  private readonly componentGeometryWriters = new Map<object, GeometryWriter>();
+  private readonly dropBatchGeometryCache = new Map<Run, Float32Array>();
+  private readonly dropBatchWriters = new Map<Run, GeometryWriter>();
   private intensity = 0.58;
 
   setIntensity(value: number): void { this.intensity = Math.max(0, Math.min(1, value)); }
@@ -111,7 +160,6 @@ export class RunoffEngine {
       state.samples = 0;
       state.speedSum = 0;
     }
-    this.geometryCache.delete(stroke);
   }
 
   private seedForStroke(stroke: Stroke, dab: Dab): number {
@@ -172,7 +220,6 @@ export class RunoffEngine {
       gravity: 700 + dryness * 350,
       secondaryRunoff,
     });
-    this.geometryCache.delete(stroke);
   }
 
   private samplePaintInterior(dab: Dab, stroke: Stroke, random: () => number): Point {
@@ -241,7 +288,15 @@ export class RunoffEngine {
     if (isSheet) {
       const nearby = runs.find((run) => run.kind === 'sheet' && this.canJoin(run, channels, stroke.size));
       if (nearby) {
+        this.componentGeometryCache.delete(nearby);
         nearby.channels.push(...channels);
+        return true;
+      }
+    } else {
+      const previous = runs.at(-1);
+      if (previous?.kind === 'drop') {
+        this.dropBatchGeometryCache.delete(previous);
+        previous.channels.push(...channels);
         return true;
       }
     }
@@ -364,13 +419,13 @@ export class RunoffEngine {
   advance(deltaSeconds: number): void {
     const dt = Math.min(deltaSeconds, 0.05);
     for (const [stroke, runs] of this.byStroke) {
-      let changed = false;
       for (const run of runs) for (const channel of run.channels) {
         if (channel.length >= channel.maxLength) continue;
         channel.age += dt;
         const variation = 0.92 + 0.08 * Math.sin(channel.age * 2.1 + channel.seed);
         channel.length = Math.min(channel.maxLength, channel.length + channel.speed * variation * dt);
-        changed = true;
+        this.componentGeometryCache.delete(run.kind === 'sheet' ? run : channel);
+        if (run.kind === 'drop') this.dropBatchGeometryCache.delete(run);
       }
       for (const particle of stroke.splatter ?? []) {
         if (particle.age < particle.lifetime) {
@@ -382,16 +437,15 @@ export class RunoffEngine {
             particle.secondaryRunoff.y = particle.y;
             particle.secondaryRunoff.started = true;
           }
-          changed = true;
+          this.componentGeometryCache.delete(particle);
         } else if (particle.secondaryRunoff?.started && particle.secondaryRunoff.length < particle.secondaryRunoff.maxLength) {
           const channel = particle.secondaryRunoff;
           channel.age += dt;
           const modulation = 0.9 + 0.1 * Math.sin(channel.age * 3 + channel.seed);
           channel.length = Math.min(channel.maxLength, channel.length + channel.speed * modulation * dt);
-          changed = true;
+          this.componentGeometryCache.delete(channel);
         }
       }
-      if (changed) this.geometryCache.delete(stroke);
     }
   }
 
@@ -403,33 +457,82 @@ export class RunoffEngine {
     return false;
   }
 
-  retain(strokes: readonly Stroke[]): void {
+  retain(strokes: readonly Stroke[]): Set<object> {
     const keep = new Set(strokes);
-    for (const stroke of this.byStroke.keys()) if (!keep.has(stroke)) { this.byStroke.delete(stroke); this.geometryCache.delete(stroke); }
+    for (const stroke of this.byStroke.keys()) if (!keep.has(stroke)) this.byStroke.delete(stroke);
     for (const stroke of this.candidates.keys()) if (!keep.has(stroke)) this.candidates.delete(stroke);
+    const components = new Set<object>();
+    for (const stroke of strokes) {
+      for (const run of this.byStroke.get(stroke) ?? []) {
+        components.add(run);
+        if (run.kind === 'sheet') components.add(run);
+        else for (const channel of run.channels) components.add(channel);
+      }
+      for (const particle of stroke.splatter ?? []) {
+        components.add(particle);
+        if (particle.secondaryRunoff) components.add(particle.secondaryRunoff);
+      }
+    }
+    for (const component of this.componentGeometryCache.keys()) if (!components.has(component)) this.componentGeometryCache.delete(component);
+    for (const component of this.componentGeometryWriters.keys()) if (!components.has(component)) this.componentGeometryWriters.delete(component);
+    for (const run of this.dropBatchGeometryCache.keys()) if (!components.has(run)) this.dropBatchGeometryCache.delete(run);
+    for (const run of this.dropBatchWriters.keys()) if (!components.has(run)) this.dropBatchWriters.delete(run);
+    return components;
   }
 
-  clear(): void { this.byStroke.clear(); this.candidates.clear(); this.geometryCache.clear(); }
+  clear(): void { this.byStroke.clear(); this.candidates.clear(); this.componentGeometryCache.clear(); this.componentGeometryWriters.clear(); this.dropBatchGeometryCache.clear(); this.dropBatchWriters.clear(); }
 
-  geometry(stroke: Stroke): Float32Array {
-    const cached = this.geometryCache.get(stroke);
-    if (cached) return cached;
-    const vertices: number[] = [];
+  forEachGeometry(stroke: Stroke, visit: (component: object, geometry: Float32Array) => void): void {
+    const strokeColor = this.parseColor(stroke.color);
     for (const run of this.byStroke.get(stroke) ?? []) {
-      if (run.kind === 'sheet') this.appendSheet(vertices, run);
-      else for (const channel of run.channels) this.appendDrop(vertices, channel, run.color);
+      if (run.kind === 'sheet') {
+        visit(run, this.componentGeometry(run, 'sheet', run, run.color));
+      } else {
+        visit(run, this.dropBatchGeometry(run));
+      }
     }
-    const color = this.parseColor(stroke.color);
     for (const particle of stroke.splatter ?? []) {
-      this.appendSplatter(vertices, particle, color);
-      if (particle.secondaryRunoff?.started) this.appendDrop(vertices, particle.secondaryRunoff, color);
+      visit(particle, this.componentGeometry(particle, 'splatter', particle, strokeColor));
+      if (particle.secondaryRunoff?.started) {
+        const secondary = particle.secondaryRunoff;
+        visit(secondary, this.componentGeometry(secondary, 'drop', secondary, strokeColor));
+      }
     }
-    const geometry = new Float32Array(vertices);
-    this.geometryCache.set(stroke, geometry);
+  }
+
+  private dropBatchGeometry(run: Run): Float32Array {
+    const cached = this.dropBatchGeometryCache.get(run);
+    if (cached) return cached;
+    let writer = this.dropBatchWriters.get(run);
+    if (!writer) {
+      writer = new GeometryWriter();
+      this.dropBatchWriters.set(run, writer);
+    }
+    writer.reset();
+    for (const channel of run.channels) writer.append(this.componentGeometry(channel, 'drop', channel, run.color));
+    const geometry = writer.finish();
+    this.dropBatchGeometryCache.set(run, geometry);
     return geometry;
   }
 
-  private appendSplatter(vertices: number[], particle: SplatterParticle, color: [number, number, number]): void {
+  private componentGeometry(component: object, kind: 'sheet' | 'drop' | 'splatter', data: Run | Channel | SplatterParticle, color: [number, number, number]): Float32Array {
+    const cached = this.componentGeometryCache.get(component);
+    if (cached) return cached;
+    let vertices = this.componentGeometryWriters.get(component);
+    if (!vertices) {
+      vertices = new GeometryWriter();
+      this.componentGeometryWriters.set(component, vertices);
+    }
+    vertices.reset();
+    if (kind === 'sheet') this.appendSheet(vertices, data as Run);
+    else if (kind === 'drop') this.appendDrop(vertices, data as Channel, color);
+    else this.appendSplatter(vertices, data as SplatterParticle, color);
+    const geometry = vertices.finish();
+    this.componentGeometryCache.set(component, geometry);
+    return geometry;
+  }
+
+  private appendSplatter(vertices: GeometryWriter, particle: SplatterParticle, color: [number, number, number]): void {
     const c = Math.cos(Math.atan2(particle.vy, particle.vx));
     const s = Math.sin(Math.atan2(particle.vy, particle.vx));
     const radiusX = particle.radius * particle.aspect;
@@ -438,73 +541,102 @@ export class RunoffEngine {
     for (let i = 0; i < count; i++) {
       const a = i / count * Math.PI * 2;
       const b = (i + 1) / count * Math.PI * 2;
-      const point = (angle: number): number[] => {
-        const lx = Math.cos(angle) * radiusX;
-        const ly = Math.sin(angle) * radiusY;
-        return [particle.x + c * lx - s * ly, particle.y + s * lx + c * ly];
-      };
-      this.triangle(vertices, [particle.x, particle.y], point(a), point(b), color);
+      const lxA = Math.cos(a) * radiusX;
+      const lyA = Math.sin(a) * radiusY;
+      const ax = particle.x + c * lxA - s * lyA;
+      const ay = particle.y + s * lxA + c * lyA;
+      const lxB = Math.cos(b) * radiusX;
+      const lyB = Math.sin(b) * radiusY;
+      const bx = particle.x + c * lxB - s * lyB;
+      const by = particle.y + s * lxB + c * lyB;
+      vertices.triangle(particle.x, particle.y, ax, ay, bx, by, color);
     }
   }
 
-  private appendDrop(vertices: number[], channel: Channel, color: [number, number, number]): void {
+  private appendDrop(vertices: GeometryWriter, channel: Channel, color: [number, number, number]): void {
     if (channel.length <= 0) return;
     const tipRadius = channel.width * 0.62;
     const bodyLength = Math.max(0, channel.length - tipRadius);
     const segments = Math.max(2, Math.min(48, Math.ceil(bodyLength / 4)));
-    const sections: Array<{ y: number; half: number }> = [];
+    let previousY = 0;
+    let previousHalf = 0;
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
       const taper = 0.84 + 0.12 * Math.sin(t * Math.PI);
       const tipBulge = t > 0.78 ? 1 + 0.22 * ((t - 0.78) / 0.22) : 1;
-      sections.push({ y: channel.y + bodyLength * t, half: channel.width * taper * tipBulge * 0.5 });
+      const y = channel.y + bodyLength * t;
+      const half = channel.width * taper * tipBulge * 0.5;
+      if (i > 0) {
+        const alX = channel.x - previousHalf; const arX = channel.x + previousHalf;
+        const blX = channel.x - half; const brX = channel.x + half;
+        vertices.triangle(alX, previousY, arX, previousY, blX, y, color);
+        vertices.triangle(arX, previousY, brX, y, blX, y, color);
+      }
+      previousY = y;
+      previousHalf = half;
     }
-    for (let i = 0; i < sections.length - 1; i++) {
-      const a = sections[i]; const b = sections[i + 1];
-      const al = [channel.x - a.half, a.y]; const ar = [channel.x + a.half, a.y];
-      const bl = [channel.x - b.half, b.y]; const br = [channel.x + b.half, b.y];
-      this.triangle(vertices, al, ar, bl, color);
-      this.triangle(vertices, ar, br, bl, color);
-    }
-    const tip = sections[sections.length - 1];
-    this.appendCap(vertices, channel.x, tip.y, tipRadius, color);
+    this.appendCap(vertices, channel.x, previousY, tipRadius, color);
   }
 
   /** Joins adjacent channel starts into one continuously filled runoff sheet. */
-  private appendSheet(vertices: number[], run: Run): void {
-    const channels = run.channels.filter((channel) => channel.length > 0);
-    if (!channels.length) return;
-    const startY = Math.min(...channels.map((channel) => channel.y));
-    const endY = Math.max(...channels.map((channel) => channel.y + channel.length));
+  private appendSheet(vertices: GeometryWriter, run: Run): void {
+    let startY = Infinity;
+    let endY = -Infinity;
+    let hasChannels = false;
+    for (const channel of run.channels) {
+      if (channel.length <= 0) continue;
+      hasChannels = true;
+      startY = Math.min(startY, channel.y);
+      endY = Math.max(endY, channel.y + channel.length);
+    }
+    if (!hasChannels) return;
     const step = 3;
-    const sections: Array<{ y: number; left: number; right: number }> = [];
+    let previousY = 0;
+    let previousLeft = 0;
+    let previousRight = 0;
+    let hasPrevious = false;
+    let bottomY = 0;
+    let bottomLeft = 0;
+    let bottomRight = 0;
     for (let y = startY; y <= endY + step; y += step) {
-      const active = channels.filter((channel) => y >= channel.y && y <= channel.y + channel.length);
-      if (!active.length) continue;
-      const left = Math.min(...active.map((channel) => channel.x - channel.width * 0.5));
-      const right = Math.max(...active.map((channel) => channel.x + channel.width * 0.5));
-      sections.push({ y: Math.min(y, endY), left, right });
+      let left = Infinity;
+      let right = -Infinity;
+      let hasActive = false;
+      for (const channel of run.channels) {
+        if (channel.length <= 0 || y < channel.y || y > channel.y + channel.length) continue;
+        hasActive = true;
+        left = Math.min(left, channel.x - channel.width * 0.5);
+        right = Math.max(right, channel.x + channel.width * 0.5);
+      }
+      if (!hasActive) continue;
+      const sectionY = Math.min(y, endY);
+      if (hasPrevious) {
+        vertices.triangle(previousLeft, previousY, previousRight, previousY, left, sectionY, run.color);
+        vertices.triangle(previousRight, previousY, right, sectionY, left, sectionY, run.color);
+      }
+      previousY = sectionY;
+      previousLeft = left;
+      previousRight = right;
+      hasPrevious = true;
+      bottomY = sectionY;
+      bottomLeft = left;
+      bottomRight = right;
     }
-    for (let i = 0; i < sections.length - 1; i++) {
-      const a = sections[i]; const b = sections[i + 1];
-      this.triangle(vertices, [a.left, a.y], [a.right, a.y], [b.left, b.y], run.color);
-      this.triangle(vertices, [a.right, a.y], [b.right, b.y], [b.left, b.y], run.color);
-    }
-    const bottom = sections[sections.length - 1];
-    if (bottom) this.appendCap(vertices, (bottom.left + bottom.right) * 0.5, bottom.y, (bottom.right - bottom.left) * 0.5, run.color);
+    if (hasPrevious) this.appendCap(vertices, (bottomLeft + bottomRight) * 0.5, bottomY, (bottomRight - bottomLeft) * 0.5, run.color);
   }
 
-  private appendCap(vertices: number[], x: number, y: number, radius: number, color: [number, number, number]): void {
+  private appendCap(vertices: GeometryWriter, x: number, y: number, radius: number, color: [number, number, number]): void {
     const count = 10;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2;
       const b = ((i + 1) / count) * Math.PI * 2;
-      this.triangle(vertices, [x, y], [x + Math.cos(a) * radius, y + Math.sin(a) * radius], [x + Math.cos(b) * radius, y + Math.sin(b) * radius], color);
+      vertices.triangle(
+        x, y,
+        x + Math.cos(a) * radius, y + Math.sin(a) * radius,
+        x + Math.cos(b) * radius, y + Math.sin(b) * radius,
+        color,
+      );
     }
-  }
-
-  private triangle(vertices: number[], a: number[], b: number[], c: number[], color: [number, number, number]): void {
-    for (const point of [a, b, c]) vertices.push(point[0], point[1], color[0], color[1], color[2]);
   }
 
   private parseColor(hex: string): [number, number, number] {

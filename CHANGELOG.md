@@ -2,6 +2,21 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.6.0] - 2026-11-04
+
+### Added
+
+- Incremental rendering of new paint segments to avoid unnecessary full redraws.
+
+### Changed
+
+- Optimized runoff geometry generation with reusable buffers and component-based caching.
+- Batched adjacent drop channels to reduce draw calls.
+
+### Fixed
+
+- Prevented new runoff effects from spawning when run intensity is set to zero.
+
 ## [0.5.0] - 2026-11-03
 
 ### Added
