@@ -100,7 +100,7 @@ export class RunoffEngine {
       const dwellCapacity = state.dwellEvents;
       const maxForStroke = Math.max(1, pathCapacity + dwellCapacity);
       const candidate = movedEnough ? dab : state.lastCandidate;
-      if (state.attempts < maxForStroke && Math.random() < chance) {
+      if (this.intensity > 0 && state.attempts < maxForStroke && Math.random() < chance) {
         if (this.spawn(runs, stroke, candidate, averageLoad, averagePaintLoad, averageSpeed, canvasWidth, canvasHeight)) state.attempts++;
       }
       state.lastCandidate = movedEnough ? dab : state.lastCandidate;
@@ -129,6 +129,7 @@ export class RunoffEngine {
   }
 
   private trySpawnSplatter(stroke: Stroke, dab: Dab, travelX: number, travelY: number, state: CandidateState): void {
+    if (this.intensity === 0) return;
     const velocity = dab.velocity ?? 0;
     if (velocity < 500) return;
     const speedFactor = Math.max(0, Math.min(1, (velocity - 500) / 1200));
@@ -203,6 +204,7 @@ export class RunoffEngine {
   }
 
   private spawn(runs: Run[], stroke: Stroke, dab: Dab, load: number, paintLoad: number, speed: number, canvasWidth: number, canvasHeight: number): boolean {
+    if (this.intensity === 0) return false;
     const dry = 1 - paintLoad;
     const isSheet = Math.random() < 0.02 + dry * 0.80;
     const baseWidth = stroke.size * (isSheet ? 0.055 + dry * 0.12 : 0.032 + paintLoad * 0.022 + paintLoad * paintLoad * 0.012);
