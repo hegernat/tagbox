@@ -4,20 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#090a0b" />
-    <title>Tagbox — Studio</title>
+    <title>Tagbox — Fullscreen</title>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="Tagbox startsida"><span>TAGBOX <span id="brand-version"></span></span></a>
-        <div class="top-actions"><button id="canvas-mode-button" class="mode-button" type="button">Canvas Only</button><button id="help-button" class="icon-button help-button" type="button" title="Help" aria-label="Open help">?</button><button id="clear-button" class="icon-button clear-button" type="button" title="Töm canvas" aria-label="Töm canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+        <a class="brand" href="#" aria-label="Tagbox home"><span>TAGBOX <span id="brand-version"></span></span></a>
+        <div class="top-actions"><button id="canvas-mode-button" class="mode-button" type="button">Fullscreen</button><button id="help-button" class="icon-button help-button" type="button" title="Help" aria-label="Open help">?</button><button id="clear-button" class="icon-button clear-button" type="button" title="Clear canvas" aria-label="Clear canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
       </header>
       <main class="workspace">
-        <section class="canvas-stage" aria-label="Rityta">
-          <canvas id="paint-canvas" aria-label="Rityta, dra med musen för att måla"></canvas>
+        <section class="canvas-stage" aria-label="Canvas">
+          <canvas id="paint-canvas" aria-label="Canvas, drag to paint"></canvas>
           <canvas id="runoff-canvas" class="runoff-layer" aria-hidden="true"></canvas>
           <div id="brush-cursor-preview" class="brush-cursor-preview" aria-hidden="true"><span class="brush-cursor-tip"></span></div>
-          <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Tillbaka till Studio">Studio <kbd>Esc</kbd></button>
+          <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Exit fullscreen">Exit fullscreen</button>
         </section>
         <aside class="toolbar" aria-label="Penselinställningar">
           <div class="tool-group brush-shape-group">
@@ -38,8 +38,8 @@
           </div>
           <div class="tool-group">
             <div class="control-label"><label for="brush-size">Brush size</label><output id="size-value" for="brush-size">10 px</output></div>
-            <input id="brush-size" class="range-input" type="range" min="2" max="96" value="10" />
-            <div class="range-ends"><span>2</span><span>96</span></div>
+            <input id="brush-size" class="range-input" type="range" min="2" max="50" value="10" />
+            <div class="range-ends"><span>2</span><span>50</span></div>
           </div>
           <div class="tool-group smoothing-group">
             <div class="control-label"><label for="smoothing">Stroke smoothing</label><output id="smoothing-value" for="smoothing">50%</output></div>
@@ -96,7 +96,7 @@
           <h2>Other controls</h2>
           <ul>
             <li>Use Undo or Ctrl+Z (⌘Z on Mac) to undo.</li>
-            <li>Use Canvas Only to hide the toolbar.</li>
+            <li>Use Fullscreen to hide the toolbar.</li>
             <li>Use the trash button to clear the entire canvas.</li>
           </ul>
         </section>

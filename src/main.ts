@@ -1,7 +1,7 @@
 import './style.css';
 import { BrushEngine } from './brush';
 import { pointerPosition, CanvasRenderer } from './renderer';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, settings, type Material, type Stroke } from './settings';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, clampBrushSize, settings, type Material, type Point, type Stroke } from './settings';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#paint-canvas')!;
 const runoffCanvas = document.querySelector<HTMLCanvasElement>('#runoff-canvas')!;
@@ -42,6 +42,17 @@ let lastCanvasPointer: PointerEvent | null = null;
 let rotationPointerId: number | null = null;
 let rotationLastPointerAngle: number | null = null;
 const touchCandidates = new Map<number, PointerEvent>();
+const viewportPointers = new Map<number, Point>();
+let gestureMode: 'pinch' | 'pinch-pending' | 'pan' | null = null;
+let pinchStartDistance = 0;
+let pinchStartZoom = 1;
+let pinchStartPan: Point = { x: 0, y: 0 };
+let pinchStartFocal: Point = { x: 0, y: 0 };
+let panStart: Point = { x: 0, y: 0 };
+let panStartOffset: Point = { x: 0, y: 0 };
+let viewportScale = 1;
+let viewportZoom = 1;
+let viewportPan: Point = { x: 0, y: 0 };
 let touchCandidateCount = 0;
 let touchCandidateCanceled = false;
 const gestureMoveThreshold = 8;
@@ -97,13 +108,26 @@ function setRotationFromPointer(event: PointerEvent): void {
 
 function resizeCanvas(): void {
   const stage = canvas.parentElement!;
+  const mobileCanvasOnly = appShell.classList.contains('canvas-only') && window.matchMedia('(max-width: 700px)').matches;
   const portraitMobile = window.matchMedia('(max-width: 700px) and (orientation: portrait)').matches;
-  const scale = portraitMobile
-    ? stage.clientHeight / CANVAS_HEIGHT
-    : Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
-  const displayWidth = CANVAS_WIDTH * scale;
-  const displayHeight = CANVAS_HEIGHT * scale;
+  viewportScale = mobileCanvasOnly
+    ? Math.max(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT)
+    : portraitMobile ? stage.clientHeight / CANVAS_HEIGHT : Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
+  const displayWidth = CANVAS_WIDTH * viewportScale * viewportZoom;
+  const displayHeight = CANVAS_HEIGHT * viewportScale * viewportZoom;
   renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT, Math.min(window.devicePixelRatio || 1, 2), displayWidth, displayHeight);
+  clampViewportPan();
+  stage.style.setProperty('--canvas-pan-x', `${viewportPan.x}px`);
+  stage.style.setProperty('--canvas-pan-y', `${viewportPan.y}px`);
+}
+function clampViewportPan(): void {
+  const stage = canvas.parentElement!;
+  const width = CANVAS_WIDTH * viewportScale * viewportZoom;
+  const height = CANVAS_HEIGHT * viewportScale * viewportZoom;
+  const maxX = Math.max(0, (width - stage.clientWidth) / 2);
+  const maxY = Math.max(0, (height - stage.clientHeight) / 2);
+  viewportPan.x = Math.max(-maxX, Math.min(maxX, viewportPan.x));
+  viewportPan.y = Math.max(-maxY, Math.min(maxY, viewportPan.y));
 }
 new ResizeObserver(resizeCanvas).observe(canvas.parentElement!);
 window.addEventListener('resize', resizeCanvas);
@@ -122,10 +146,29 @@ function clearCanvas(): void {
   strokes.length = 0; renderer.clear(); undoButton.disabled = true;
 }
 canvas.addEventListener('pointerdown', (event) => {
-  if (isDrawing || event.button !== 0) return;
+  const mobileCanvasOnly = appShell.classList.contains('canvas-only') && window.matchMedia('(max-width: 700px)').matches;
+  if ((isDrawing && !(mobileCanvasOnly && event.pointerType === 'touch')) || event.button !== 0) return;
   event.preventDefault();
   canvas.setPointerCapture(event.pointerId);
   if (event.pointerType === 'touch') {
+    if (mobileCanvasOnly) {
+      viewportPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (viewportPointers.size === 2) {
+        const [a, b] = [...viewportPointers.values()];
+        pinchStartDistance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        pinchStartZoom = viewportZoom; pinchStartPan = { ...viewportPan }; gestureMode = 'pinch-pending';
+        const stageRect = canvas.parentElement!.getBoundingClientRect();
+        pinchStartFocal = { x: (a.x + b.x) / 2 - stageRect.left, y: (a.y + b.y) / 2 - stageRect.top };
+        touchCandidates.set(event.pointerId, event);
+        touchCandidateCount = Math.max(touchCandidateCount, touchCandidates.size);
+        return;
+      }
+      if (viewportZoom > 1) {
+        touchCandidates.clear(); touchCandidateCount = 0; touchCandidateCanceled = true;
+        panStart = { x: event.clientX, y: event.clientY }; panStartOffset = { ...viewportPan }; gestureMode = 'pan';
+        return;
+      }
+    }
     if (touchCandidateCanceled) return;
     touchCandidates.set(event.pointerId, event);
     touchCandidateCount = Math.max(touchCandidateCount, touchCandidates.size);
@@ -137,6 +180,42 @@ canvas.addEventListener('pointerdown', (event) => {
 canvas.addEventListener('pointerenter', updateBrushCursor);
 canvas.addEventListener('pointermove', (event) => {
   updateBrushCursor(event);
+  if (viewportPointers.has(event.pointerId)) {
+    viewportPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = [...viewportPointers.values()];
+    if (gestureMode === 'pinch-pending' && points.length >= 2) {
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      const stageRect = canvas.parentElement!.getBoundingClientRect();
+      const midpoint = { x: (points[0].x + points[1].x) / 2 - stageRect.left, y: (points[0].y + points[1].y) / 2 - stageRect.top };
+      if (Math.abs(distance - pinchStartDistance) > gestureMoveThreshold || Math.hypot(midpoint.x - pinchStartFocal.x, midpoint.y - pinchStartFocal.y) > gestureMoveThreshold) {
+        touchCandidates.clear(); touchCandidateCount = 0; touchCandidateCanceled = true;
+        if (isDrawing) finishStroke();
+        gestureMode = 'pinch';
+      }
+    }
+    if (gestureMode === 'pinch' && points.length >= 2) {
+      const stageRect = canvas.parentElement!.getBoundingClientRect();
+      const stage = canvas.parentElement!;
+      const midpoint = { x: (points[0].x + points[1].x) / 2 - stageRect.left, y: (points[0].y + points[1].y) / 2 - stageRect.top };
+      const distance = Math.max(1, Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y));
+      viewportZoom = Math.max(0.75, Math.min(4, pinchStartZoom * distance / pinchStartDistance));
+      viewportPan = {
+        x: midpoint.x - stage.clientWidth / 2 - (pinchStartFocal.x - stage.clientWidth / 2 - pinchStartPan.x) * viewportZoom / pinchStartZoom,
+        y: midpoint.y - stage.clientHeight / 2 - (pinchStartFocal.y - stage.clientHeight / 2 - pinchStartPan.y) * viewportZoom / pinchStartZoom,
+      };
+      clampViewportPan();
+      renderer.setDisplaySize(CANVAS_WIDTH * viewportScale * viewportZoom, CANVAS_HEIGHT * viewportScale * viewportZoom);
+      stage.style.setProperty('--canvas-pan-x', `${viewportPan.x}px`); stage.style.setProperty('--canvas-pan-y', `${viewportPan.y}px`);
+      return;
+    }
+    if (gestureMode === 'pan') {
+      viewportPan = { x: panStartOffset.x + event.clientX - panStart.x, y: panStartOffset.y + event.clientY - panStart.y };
+      clampViewportPan();
+      const stage = canvas.parentElement!;
+      stage.style.setProperty('--canvas-pan-x', `${viewportPan.x}px`); stage.style.setProperty('--canvas-pan-y', `${viewportPan.y}px`);
+      return;
+    }
+  }
   const candidate = touchCandidates.get(event.pointerId);
   if (candidate && Math.hypot(event.clientX - candidate.clientX, event.clientY - candidate.clientY) > gestureMoveThreshold) {
     if (touchCandidates.size === 1 && touchCandidateCount === 1) {
@@ -162,6 +241,12 @@ function finishStroke(event?: PointerEvent): void {
   if (stroke) { strokes.push(stroke); renderer.commitStroke(stroke); undoButton.disabled = false; }
 }
 canvas.addEventListener('pointerup', (event) => {
+  if (viewportPointers.has(event.pointerId)) {
+    const wasViewportGesture = gestureMode === 'pinch' || gestureMode === 'pan' || viewportZoom > 1;
+    viewportPointers.delete(event.pointerId); gestureMode = null;
+    if (!viewportPointers.size) { touchCandidateCount = 0; touchCandidateCanceled = false; }
+    if (wasViewportGesture) return;
+  }
   if (touchCandidates.has(event.pointerId)) {
     if (touchCandidateCount === 1) {
       const initial = touchCandidates.get(event.pointerId)!;
@@ -179,6 +264,11 @@ canvas.addEventListener('pointerup', (event) => {
   finishStroke(event);
 });
 canvas.addEventListener('pointercancel', (event) => {
+  if (viewportPointers.has(event.pointerId)) {
+    viewportPointers.delete(event.pointerId); gestureMode = null;
+    if (!viewportPointers.size) { touchCandidateCount = 0; touchCandidateCanceled = false; }
+    return;
+  }
   if (touchCandidates.has(event.pointerId)) {
     touchCandidates.delete(event.pointerId); touchCandidateCanceled = true;
     if (!touchCandidates.size) { touchCandidateCount = 0; touchCandidateCanceled = false; }
@@ -190,7 +280,8 @@ canvas.addEventListener('lostpointercapture', () => finishStroke());
 
 async function enterCanvasOnly(): Promise<void> {
   appShell.classList.add('canvas-only');
-  modeButton.textContent = 'Studio';
+  viewportZoom = 1; viewportPan = { x: 0, y: 0 };
+  modeButton.textContent = 'Exit fullscreen';
   try { if (!document.fullscreenElement && appShell.requestFullscreen) await appShell.requestFullscreen(); } catch { /* CSS canvas-only mode remains available when fullscreen is denied. */ }
   if (document.fullscreenElement && screenOrientation.lock) {
     try { await screenOrientation.lock('landscape'); } catch { /* Orientation locking is optional and browser-controlled. */ }
@@ -199,12 +290,12 @@ async function enterCanvasOnly(): Promise<void> {
 }
 async function exitCanvasOnly(): Promise<void> {
   appShell.classList.remove('canvas-only');
-  modeButton.textContent = 'Canvas Only';
+  modeButton.textContent = 'Fullscreen';
   if (typeof screenOrientation.unlock === 'function') {
     try { screenOrientation.unlock(); } catch { /* Continue exiting Canvas Only if unlocking is unavailable. */ }
   }
   if (document.fullscreenElement && document.exitFullscreen) {
-    try { await document.exitFullscreen(); } catch { /* Keep the Studio controls available. */ }
+    try { await document.exitFullscreen(); } catch { /* Keep the fullscreen controls available. */ }
   }
   resizeCanvas();
 }
@@ -227,12 +318,13 @@ document.addEventListener('fullscreenchange', () => {
     if (typeof screenOrientation.unlock === 'function') {
       try { screenOrientation.unlock(); } catch { /* Keep fullscreen transitions independent of orientation support. */ }
     }
-    appShell.classList.remove('canvas-only'); modeButton.textContent = 'Canvas Only'; resizeCanvas();
+    appShell.classList.remove('canvas-only'); modeButton.textContent = 'Fullscreen'; resizeCanvas();
   }
 });
 
 sizeInput.addEventListener('input', () => {
-  settings.size = Number(sizeInput.value);
+  settings.size = clampBrushSize(Number(sizeInput.value));
+  sizeInput.value = String(settings.size);
   document.querySelector('#size-value')!.textContent = `${settings.size} px`;
 });
 smoothingInput.addEventListener('input', () => {

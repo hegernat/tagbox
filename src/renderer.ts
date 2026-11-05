@@ -37,6 +37,34 @@ void main(){
   vec3 color=mix(body,reflectionTint*value,0.82*reflectionLevel);
   outColor=vec4(color,coverage);
 }`;
+const environmentChromeFragment = `#version 300 es
+precision highp float;
+in highp vec2 v_uv; uniform highp sampler2D u_silverMask; uniform highp sampler2D u_copperMask; uniform highp sampler2D u_goldMask; uniform highp sampler2D u_environment; uniform highp float u_reflectionIntensity; out highp vec4 outColor;
+float silhouette(vec2 uv){ float s=texture(u_silverMask,uv).a; float c=texture(u_copperMask,uv).a; float g=texture(u_goldMask,uv).a; return 1.0-(1.0-s)*(1.0-c)*(1.0-g); }
+vec3 srgbToLinear(vec3 c){ return mix(pow((c+0.055)/1.055,vec3(2.4)),c/12.92,lessThanEqual(c,vec3(0.04045))); }
+vec3 linearToSrgb(vec3 c){ c=max(c,vec3(0.0)); return mix(1.055*pow(c,vec3(1.0/2.4))-0.055,12.92*c,lessThanEqual(c,vec3(0.0031308))); }
+void main(){
+  float silver=texture(u_silverMask,v_uv).a; float copper=texture(u_copperMask,v_uv).a; float gold=texture(u_goldMask,v_uv).a;
+  float coverage=1.0-(1.0-silver)*(1.0-copper)*(1.0-gold); if(coverage<=0.001) discard;
+  float weight=max(silver+copper+gold,0.001);
+  vec3 tint=(silver*vec3(0.72,0.76,0.80)+copper*vec3(0.64,0.30,0.16)+gold*vec3(0.78,0.57,0.16))/weight;
+  vec2 texel=1.0/vec2(textureSize(u_silverMask,0));
+  vec2 stepUv=texel*12.0;
+  float left=silhouette(v_uv-vec2(stepUv.x,0.0)); float right=silhouette(v_uv+vec2(stepUv.x,0.0));
+  float top=silhouette(v_uv+vec2(0.0,stepUv.y)); float bottom=silhouette(v_uv-vec2(0.0,stepUv.y));
+  vec2 slope=vec2(right-left,top-bottom);
+  vec3 normal=normalize(vec3(-slope*2.2,1.0));
+  vec2 envUv=clamp(vec2(v_uv.x+normal.x*0.34,0.5+normal.y*0.40+normal.z*0.18),vec2(0.0),vec2(1.0));
+  vec3 envLinear=srgbToLinear(texture(u_environment,envUv).rgb);
+  vec3 tintLinear=srgbToLinear(tint);
+  float fresnel=pow(1.0-normal.z,2.0);
+  vec3 reflected=tintLinear*(0.025+2.1*envLinear);
+  vec3 body=tintLinear*(0.07+0.06*normal.z);
+  vec3 linearColor=mix(body,reflected,clamp(u_reflectionIntensity,0.0,1.0)*(0.82+0.18*fresnel));
+  linearColor+=tintLinear*pow(max(dot(normal,normalize(vec3(-0.25,0.55,0.79))),0.0),38.0)*0.45;
+  vec3 color=linearToSrgb(linearColor/(vec3(1.0)+linearColor));
+  outColor=vec4(color,coverage);
+}`;
 const dabVertex = `#version 300 es
 precision highp float; precision highp int;
 in highp vec3 a_dab; uniform highp vec2 u_targetSize; uniform highp vec2 u_scale; uniform highp float u_brushSize; uniform highp int u_shape; out highp float v_angle; out highp float v_brushSizePx; out highp float v_pointSize; out highp vec2 v_world;
@@ -59,6 +87,9 @@ export class CanvasRenderer {
   private baseProgram: WebGLProgram;
   private displayProgram: WebGLProgram;
   private chromeProgram: WebGLProgram;
+  private environmentChromeProgram: WebGLProgram;
+  private environmentTexture: WebGLTexture;
+  private environmentReady = false;
   private runoffProgram: WebGLProgram;
   private baseVao: WebGLVertexArrayObject;
   private runoffVao: WebGLVertexArrayObject;
@@ -87,6 +118,24 @@ export class CanvasRenderer {
     this.baseProgram = this.createProgram(baseGl, dabVertex, baseFragment, 'brush dab');
     this.displayProgram = this.createProgram(baseGl, fullscreenVertex, displayFragment, 'canvas display');
     this.chromeProgram = this.createProgram(baseGl, fullscreenVertex, chromeFragment, 'chrome composite');
+    this.environmentChromeProgram = this.createProgram(baseGl, fullscreenVertex, environmentChromeFragment, 'environment chrome composite');
+    this.environmentTexture = this.createTexture(baseGl);
+    baseGl.bindTexture(baseGl.TEXTURE_2D, this.environmentTexture);
+    baseGl.texImage2D(baseGl.TEXTURE_2D, 0, baseGl.RGBA8, 1, 1, 0, baseGl.RGBA, baseGl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+    const environment = new Image();
+    environment.onload = () => {
+      baseGl.bindTexture(baseGl.TEXTURE_2D, this.environmentTexture);
+      baseGl.pixelStorei(baseGl.UNPACK_FLIP_Y_WEBGL, 0);
+      baseGl.pixelStorei(baseGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, baseGl.NONE);
+      baseGl.texImage2D(baseGl.TEXTURE_2D, 0, baseGl.RGBA8, baseGl.RGBA, baseGl.UNSIGNED_BYTE, environment);
+      this.environmentReady = baseGl.getError() === baseGl.NO_ERROR;
+      if (this.environmentReady) this.scheduleRender(true);
+    };
+    environment.onerror = () => {
+      this.environmentReady = false;
+      this.scheduleRender(true);
+    };
+    environment.src = '/chrome-environment.png';
     this.runoffProgram = this.createProgram(baseGl, runoffVertex, runoffFragment, 'runoff');
     const baseVao = baseGl.createVertexArray();
     const runoffVao = baseGl.createVertexArray();
@@ -184,6 +233,11 @@ export class CanvasRenderer {
     }
     this.replayBase();
     this.startRunoffAnimation();
+  }
+
+  setDisplaySize(width: number, height: number): void {
+    this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`;
+    this.runoffCanvas.style.width = `${width}px`; this.runoffCanvas.style.height = `${height}px`;
   }
 
   setRunIntensity(value: number): void { this.runoffEngine.setIntensity(value); }
@@ -293,13 +347,20 @@ export class CanvasRenderer {
     const gl = this.baseGl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.baseFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.chromeProgram);
+    const useEnvironment = this.environmentReady;
+    const program = useEnvironment ? this.environmentChromeProgram : this.chromeProgram;
+    gl.useProgram(program);
     chromeMaterials.forEach((material, index) => {
       gl.activeTexture(gl.TEXTURE0 + index);
       gl.bindTexture(gl.TEXTURE_2D, this.chromeMasks[material].texture);
       const uniformName = material === 'silver-chrome' ? 'u_silverMask' : material === 'copper-chrome' ? 'u_copperMask' : 'u_goldMask';
-      gl.uniform1i(gl.getUniformLocation(this.chromeProgram, uniformName), index);
+      gl.uniform1i(gl.getUniformLocation(program, uniformName), index);
     });
+    if (useEnvironment) {
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.environmentTexture);
+      gl.uniform1i(gl.getUniformLocation(program, 'u_environment'), 3);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_reflectionIntensity'), 1.0);
+    }
     gl.bindVertexArray(this.baseVao);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chrome Rendering Fixture</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 20px; background: #101213; color: #eee; font: 14px system-ui, sans-serif; }
+      h1 { margin: 0 0 8px; font-size: 18px; }
+      p { margin: 0 0 18px; color: #aeb3b3; }
+      main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      section { min-width: 0; }
+      h2 { margin: 0 0 7px; font-size: 13px; font-weight: 500; }
+      .stage { position: relative; overflow: hidden; width: 100%; aspect-ratio: 16 / 9; background: #050607; }
+      canvas { position: absolute; left: 50%; top: 50%; display: block; transform: translate(-50%, -50%); }
+      .runoff { pointer-events: none; }
+      @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <h1>Chrome Rendering Fixture</h1>
+    <p>Each panel uses a 50 px round brush: one broad horizontal stroke, then vertical and diagonal crossing strokes. Reflection intensity: 100%.</p>
+    <p id="environment-values">Reading source environment pixels…</p>
+    <main>
+      <section><h2>Silver Chrome</h2><div class="stage"><canvas id="silver"></canvas><canvas id="silver-runoff" class="runoff"></canvas></div></section>
+      <section><h2>Copper Chrome</h2><div class="stage"><canvas id="copper"></canvas><canvas id="copper-runoff" class="runoff"></canvas></div></section>
+      <section><h2>Gold Chrome</h2><div class="stage"><canvas id="gold"></canvas><canvas id="gold-runoff" class="runoff"></canvas></div></section>
+    </main>
+    <script type="module" src="./chrome-rendering.ts"></script>
+  </body>
+</html>

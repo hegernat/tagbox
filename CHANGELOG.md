@@ -2,6 +2,20 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.7.0] - 2026-11-05
+
+### Added
+
+- Made the shared environment-map chrome rendering permanent for Silver, Copper and Gold Chrome at 100% reflection intensity.
+
+### Changed
+
+- Reduced the maximum brush size from 96 px to 50 px.
+
+### Removed
+
+- Removed the experimental 3D Chrome toggle and reflection-intensity controls.
+
 ## [0.6.0] - 2026-11-04
 
 ### Added
@@ -53,7 +67,7 @@ This project follows a Keep a Changelog-inspired format. Version numbers follow 
 - Interactive rotation dial for Square and Chisel brush tips, with an orientation-aware brush cursor preview.
 - Paint Splatter checkbox, persisted across sessions and applied to newly created strokes.
 - Velocity-based paint particles with stored landing positions and optional short secondary runoff from selected particles.
-- Canvas Only mode and fullscreen support, with optional mobile landscape orientation locking.
+- Fullscreen mode, with optional mobile landscape orientation locking.
 
 ### Changed
 

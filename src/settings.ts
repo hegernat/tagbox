@@ -9,5 +9,10 @@ export interface Stroke { points: Point[]; dabs: Dab[]; splatter?: SplatterParti
 
 export const CANVAS_WIDTH = 1920;
 export const CANVAS_HEIGHT = 1080;
+export const MIN_BRUSH_SIZE = 2;
+export const MAX_BRUSH_SIZE = 50;
+export function clampBrushSize(size: number): number {
+  return Math.max(MIN_BRUSH_SIZE, Math.min(MAX_BRUSH_SIZE, Number.isFinite(size) ? size : MIN_BRUSH_SIZE));
+}
 
 export const settings: BrushSettings & { shape: BrushShape; rotationDegrees: number; splatterEnabled: boolean } = { size: 10, color: '#ffffff', material: 'paint', smoothing: 0.5, wetness: 0.68, intensity: 0.58, shape: 'round', rotationDegrees: 0, splatterEnabled: true };
