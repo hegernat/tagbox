@@ -2,6 +2,20 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.8.0] - 2026-11-06
+
+### Added
+
+- Added selectable Solid, Concrete and Steel Gate canvas surfaces with separate background, paint and physical-detail layers.
+- Added surface-aware runoff obstacles that stop paint at physical joints and gate thresholds.
+- Added timestamped PNG export filenames in local time.
+
+### Changed
+
+- Surface changes now clear paint, runoff, splatter and undo history while preserving brush and material settings.
+- Replaced procedural surface artwork with darker photographic concrete and a painted steel double gate.
+- Refined Steel Gate foreground compositing with pixel-level alpha masks for naturally edged physical details.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added

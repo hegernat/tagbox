@@ -6,9 +6,17 @@ interface Channel {
   width: number;
   length: number;
   maxLength: number;
+  requestedMaxLength: number;
   speed: number;
   age: number;
   seed: number;
+}
+
+export interface RunoffObstacle {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 interface Run {
@@ -89,8 +97,61 @@ export class RunoffEngine {
   private readonly dropBatchGeometryCache = new Map<Run, Float32Array>();
   private readonly dropBatchWriters = new Map<Run, GeometryWriter>();
   private intensity = 0.58;
+  private obstacles: RunoffObstacle[] = [];
 
   setIntensity(value: number): void { this.intensity = Math.max(0, Math.min(1, value)); }
+
+  setObstacles(obstacles: readonly RunoffObstacle[]): void {
+    this.obstacles = obstacles.map((obstacle) => ({ ...obstacle }));
+    for (const [stroke, runs] of this.byStroke) {
+      for (const run of runs) {
+        for (const channel of run.channels) {
+          channel.maxLength = this.limitRunLength(channel.x, channel.y, channel.width, channel.requestedMaxLength, run.kind);
+          this.componentGeometryCache.delete(run.kind === 'sheet' ? run : channel);
+        }
+        if (run.kind === 'sheet') this.limitSheetRun(run);
+        for (const channel of run.channels) channel.length = Math.min(channel.length, channel.maxLength);
+        this.dropBatchGeometryCache.delete(run);
+      }
+      for (const particle of stroke.splatter ?? []) {
+        const channel = particle.secondaryRunoff;
+        if (!channel?.started) continue;
+        channel.maxLength = this.limitRunLength(channel.x, channel.y, channel.width, channel.requestedMaxLength, 'drop');
+        channel.length = Math.min(channel.length, channel.maxLength);
+        this.componentGeometryCache.delete(channel);
+      }
+    }
+  }
+
+  private limitRunLength(x: number, y: number, width: number, requested: number, kind: Run['kind']): number {
+    const left = x - width * 0.5;
+    const right = x + width * 0.5;
+    let limit = requested;
+    for (const obstacle of this.obstacles) {
+      if (right <= obstacle.left || left >= obstacle.right || obstacle.bottom <= y) continue;
+      if (obstacle.top <= y) return 0;
+      const endBuffer = kind === 'sheet' ? width * 0.52 : 0.35;
+      limit = Math.min(limit, Math.max(0, obstacle.top - y - endBuffer));
+    }
+    return limit;
+  }
+
+  private limitSheetRun(run: Run): void {
+    if (!run.channels.length) return;
+    const minStartY = Math.min(...run.channels.map((channel) => channel.y));
+    const left = Math.min(...run.channels.map((channel) => channel.x - channel.width * 0.5));
+    const right = Math.max(...run.channels.map((channel) => channel.x + channel.width * 0.5));
+    let stopY = Infinity;
+    for (const obstacle of this.obstacles) {
+      if (right <= obstacle.left || left >= obstacle.right || obstacle.bottom <= minStartY) continue;
+      stopY = Math.min(stopY, obstacle.top <= minStartY ? minStartY : obstacle.top);
+    }
+    if (!Number.isFinite(stopY)) return;
+    for (const channel of run.channels) {
+      if (channel.y >= stopY) channel.maxLength = 0;
+      else channel.maxLength = Math.min(channel.maxLength, Math.max(0, stopY - channel.y - 0.5));
+    }
+  }
 
   addDabs(stroke: Stroke, dabs: Dab[], now: number, canvasWidth: number, canvasHeight: number): void {
     if (!dabs.length) return;
@@ -203,11 +264,14 @@ export class RunoffEngine {
     const radius = Math.max(0.8, Math.min(4.8, (1.0 + speedFactor * 1.55) * (0.82 + dryness * 0.42) * (0.82 + random() * 0.44)));
     const lifetime = 0.05 + random() * 0.10;
     const secondaryChance = dab.paintLoad < 0.55 ? 0.045 + this.intensity * 0.065 : 0.012 + this.intensity * 0.025;
-    const secondaryRunoff = radius >= 3.1 && random() < secondaryChance ? {
-      x: origin.x, y: origin.y, width: Math.max(0.55, radius * 0.16), length: 0,
-      maxLength: 5 + random() * 12, speed: 90 + random() * 85, age: 0,
-      seed: random() * Math.PI * 2, started: false,
-    } : undefined;
+    const secondaryRunoff = radius >= 3.1 && random() < secondaryChance ? (() => {
+      const maxLength = 5 + random() * 12;
+      return {
+        x: origin.x, y: origin.y, width: Math.max(0.55, radius * 0.16), length: 0,
+        maxLength, requestedMaxLength: maxLength, speed: 90 + random() * 85, age: 0,
+        seed: random() * Math.PI * 2, started: false,
+      };
+    })() : undefined;
     const particles = stroke.splatter ?? (stroke.splatter = []);
     particles.push({
       x: origin.x, y: origin.y, originX: origin.x, originY: origin.y,
@@ -277,7 +341,8 @@ export class RunoffEngine {
         y: origin.y,
         width: channelWidth,
         length: 0,
-        maxLength: Math.min(available, Math.max(requested, stroke.size * 0.8)),
+        maxLength: this.limitRunLength(origin.x, origin.y, channelWidth, Math.min(available, Math.max(requested, stroke.size * 0.8)), isSheet ? 'sheet' : 'drop'),
+        requestedMaxLength: Math.min(available, Math.max(requested, stroke.size * 0.8)),
         speed: (12 + load * 54) * (0.85 + Math.random() * 0.3),
         age: 0,
         seed: Math.random() * Math.PI * 2,
@@ -290,6 +355,8 @@ export class RunoffEngine {
       if (nearby) {
         this.componentGeometryCache.delete(nearby);
         nearby.channels.push(...channels);
+        this.limitSheetRun(nearby);
+        for (const channel of nearby.channels) channel.length = Math.min(channel.length, channel.maxLength);
         return true;
       }
     } else {
@@ -301,7 +368,9 @@ export class RunoffEngine {
       }
     }
 
-    runs.push({ kind: isSheet ? 'sheet' : 'drop', channels, color: this.parseColor(stroke.color) });
+    const run: Run = { kind: isSheet ? 'sheet' : 'drop', channels, color: this.parseColor(stroke.color) };
+    if (isSheet) this.limitSheetRun(run);
+    runs.push(run);
     return true;
   }
 
@@ -436,6 +505,10 @@ export class RunoffEngine {
             particle.secondaryRunoff.x = particle.x;
             particle.secondaryRunoff.y = particle.y;
             particle.secondaryRunoff.started = true;
+            particle.secondaryRunoff.maxLength = this.limitRunLength(
+              particle.secondaryRunoff.x, particle.secondaryRunoff.y, particle.secondaryRunoff.width,
+              particle.secondaryRunoff.requestedMaxLength, 'drop',
+            );
           }
           this.componentGeometryCache.delete(particle);
         } else if (particle.secondaryRunoff?.started && particle.secondaryRunoff.length < particle.secondaryRunoff.maxLength) {
@@ -622,7 +695,28 @@ export class RunoffEngine {
       bottomLeft = left;
       bottomRight = right;
     }
-    if (hasPrevious) this.appendCap(vertices, (bottomLeft + bottomRight) * 0.5, bottomY, (bottomRight - bottomLeft) * 0.5, run.color);
+    if (hasPrevious) {
+      const x = (bottomLeft + bottomRight) * 0.5;
+      const horizontalRadius = (bottomRight - bottomLeft) * 0.5;
+      let verticalRadius = horizontalRadius;
+      for (const obstacle of this.obstacles) {
+        if (bottomRight <= obstacle.left || bottomLeft >= obstacle.right || obstacle.top < bottomY) continue;
+        verticalRadius = Math.min(verticalRadius, Math.max(0, obstacle.top - bottomY - 0.35));
+      }
+      if (verticalRadius >= horizontalRadius) this.appendCap(vertices, x, bottomY, horizontalRadius, run.color);
+      else if (verticalRadius > 0.01) this.appendEllipseCap(vertices, x, bottomY, horizontalRadius, verticalRadius, run.color);
+    }
+  }
+
+  private appendEllipseCap(vertices: GeometryWriter, x: number, y: number, radiusX: number, radiusY: number, color: [number, number, number]): void {
+    const count = 10;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      const b = ((i + 1) / count) * Math.PI * 2;
+      vertices.triangle(x, y,
+        x + Math.cos(a) * radiusX, y + Math.sin(a) * radiusY,
+        x + Math.cos(b) * radiusX, y + Math.sin(b) * radiusY, color);
+    }
   }
 
   private appendCap(vertices: GeometryWriter, x: number, y: number, radius: number, color: [number, number, number]): void {

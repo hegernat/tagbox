@@ -1,4 +1,5 @@
 import { RunoffEngine } from './runoff';
+import type { RunoffObstacle } from './runoff';
 import type { Dab, Material, Point, Stroke } from './settings';
 
 type ChromeMaterial = Exclude<Material, 'paint'>;
@@ -10,7 +11,7 @@ void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); v_uv=p; gl_Position=
 const displayFragment = `#version 300 es
 precision highp float;
 in highp vec2 v_uv; out highp vec4 outColor; uniform highp sampler2D u_base;
-void main(){ outColor=vec4(texture(u_base,v_uv).rgb,1.0); }`;
+void main(){ outColor=texture(u_base,v_uv); }`;
 const chromeFragment = `#version 300 es
 precision highp float;
 in highp vec2 v_uv; uniform highp sampler2D u_silverMask; uniform highp sampler2D u_copperMask; uniform highp sampler2D u_goldMask; out highp vec4 outColor;
@@ -109,10 +110,9 @@ export class CanvasRenderer {
   private renderRaf = 0;
   private renderReplayRequired = false;
   private lastFrame = 0;
-  private backgroundColor = '#000000';
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly runoffCanvas: HTMLCanvasElement) {
-    const baseGl = canvas.getContext('webgl2', { alpha: false, antialias: true, preserveDrawingBuffer: true });
+    const baseGl = canvas.getContext('webgl2', { alpha: true, antialias: true, preserveDrawingBuffer: true });
     if (!baseGl) throw new Error('WebGL2 is not available in this browser.');
     this.baseGl = baseGl;
     this.baseProgram = this.createProgram(baseGl, dabVertex, baseFragment, 'brush dab');
@@ -242,9 +242,10 @@ export class CanvasRenderer {
 
   setRunIntensity(value: number): void { this.runoffEngine.setIntensity(value); }
 
-  setBackgroundColor(color: string): void {
-    this.backgroundColor = color;
-    this.replayBase();
+  setRunoffObstacles(obstacles: readonly RunoffObstacle[]): void {
+    this.runoffEngine.setObstacles(obstacles);
+    this.scheduleRender(false);
+    this.startRunoffAnimation();
   }
 
   setActive(stroke: Stroke | null, newDabs: Dab[] = []): void {
@@ -305,7 +306,7 @@ export class CanvasRenderer {
     const gl = this.baseGl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.baseFramebuffer);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(...this.parseColor(this.backgroundColor), 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
   private replayBase(): void {
@@ -472,7 +473,7 @@ export class CanvasRenderer {
     const gl = this.baseGl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.displayProgram);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.baseTexture);
     gl.uniform1i(gl.getUniformLocation(this.displayProgram, 'u_base'), 0);

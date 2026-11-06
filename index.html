@@ -10,12 +10,14 @@
     <div class="app-shell">
       <header class="topbar">
         <a class="brand" href="#" aria-label="Tagbox home"><span>TAGBOX <span id="brand-version"></span></span></a>
-        <div class="top-actions"><button id="canvas-mode-button" class="mode-button" type="button">Fullscreen</button><button id="help-button" class="icon-button help-button" type="button" title="Help" aria-label="Open help">?</button><button id="clear-button" class="icon-button clear-button" type="button" title="Clear canvas" aria-label="Clear canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+        <div class="top-actions"><button id="export-button" class="mode-button" type="button">Export PNG</button><button id="canvas-mode-button" class="mode-button" type="button">Fullscreen</button><button id="help-button" class="icon-button help-button" type="button" title="Help" aria-label="Open help">?</button><button id="clear-button" class="icon-button clear-button" type="button" title="Clear canvas" aria-label="Clear canvas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
       </header>
       <main class="workspace">
         <section class="canvas-stage" aria-label="Canvas">
+          <canvas id="background-canvas" class="surface-layer background-layer" aria-hidden="true"></canvas>
           <canvas id="paint-canvas" aria-label="Canvas, drag to paint"></canvas>
           <canvas id="runoff-canvas" class="runoff-layer" aria-hidden="true"></canvas>
+          <canvas id="foreground-canvas" class="surface-layer foreground-layer" aria-hidden="true"></canvas>
           <div id="brush-cursor-preview" class="brush-cursor-preview" aria-hidden="true"><span class="brush-cursor-tip"></span></div>
           <button id="canvas-exit-button" class="canvas-exit-button" type="button" aria-label="Exit fullscreen">Exit fullscreen</button>
         </section>
@@ -66,10 +68,15 @@
             <div id="material-palette" class="material-palette" aria-label="Chrome materials"></div>
             <div class="saved-palette-row"><span class="palette-label">Saved</span><div id="saved-palette" class="swatches saved-palette" aria-label="Saved brush colors"></div><button id="save-color-button" class="save-color-button" type="button" title="Save current brush color">+</button></div>
           </div>
-          <div class="tool-group background-group">
-            <div class="control-label"><label for="canvas-background">Canvas background</label><span class="color-hex">Artwork</span></div>
-            <div class="color-control"><span class="background-color-swatch"></span><input id="canvas-background" type="color" value="#000000" aria-label="Choose canvas background color" /><span class="color-name">Background color</span><span class="chevron">↗</span></div>
-          </div>
+          <section class="tool-group background-group" aria-labelledby="background-heading">
+            <div class="control-label"><span id="background-heading" class="shape-label">Background</span></div>
+            <div id="surface-picker" class="surface-picker" role="group" aria-label="Choose canvas background">
+              <button class="surface-option active" type="button" data-surface="solid" aria-pressed="true"><span class="surface-thumb surface-thumb-solid"></span><span>Solid</span></button>
+              <button class="surface-option" type="button" data-surface="concrete" aria-pressed="false"><span class="surface-thumb surface-thumb-concrete"></span><span>Concrete</span></button>
+              <button class="surface-option" type="button" data-surface="steel-gate" aria-pressed="false"><span class="surface-thumb surface-thumb-steel"></span><span>Steel Gate</span></button>
+            </div>
+            <div class="color-control solid-color-control"><span class="background-color-swatch"></span><input id="canvas-background" type="color" value="#000000" aria-label="Choose solid background color" /><span class="color-name">Solid color</span><span class="chevron">↗</span></div>
+          </section>
           <div class="tool-spacer"></div>
           <div class="bottom-tools"><button id="undo-button" class="undo-button" type="button" disabled><span class="undo-icon">↶</span><span>Undo stroke</span><kbd>⌘ Z</kbd></button></div>
         </aside>

@@ -1,10 +1,14 @@
 import './style.css';
 import { BrushEngine } from './brush';
+import { timestampedExportFilename } from './export-filename';
 import { pointerPosition, CanvasRenderer } from './renderer';
+import { drawForeground, drawSurface, getSurfaceObstacles, type CanvasSurface } from './surfaces';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, clampBrushSize, settings, type Material, type Point, type Stroke } from './settings';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#paint-canvas')!;
 const runoffCanvas = document.querySelector<HTMLCanvasElement>('#runoff-canvas')!;
+const backgroundCanvas = document.querySelector<HTMLCanvasElement>('#background-canvas')!;
+const foregroundCanvas = document.querySelector<HTMLCanvasElement>('#foreground-canvas')!;
 const renderer = new CanvasRenderer(canvas, runoffCanvas);
 document.querySelector<HTMLElement>('#brand-version')!.textContent = `v${__TAGBOX_VERSION__}`;
 const strokes: Stroke[] = [];
@@ -22,6 +26,7 @@ const rotationValue = document.querySelector<HTMLOutputElement>('#rotation-value
 const brushCursor = document.querySelector<HTMLElement>('#brush-cursor-preview')!;
 const brushCursorTip = document.querySelector<HTMLElement>('.brush-cursor-tip')!;
 const backgroundInput = document.querySelector<HTMLInputElement>('#canvas-background')!;
+const surfacePicker = document.querySelector<HTMLElement>('#surface-picker')!;
 const presetPalette = document.querySelector<HTMLElement>('#preset-palette')!;
 const materialPalette = document.querySelector<HTMLElement>('#material-palette')!;
 const savedPalette = document.querySelector<HTMLElement>('#saved-palette')!;
@@ -53,6 +58,8 @@ let panStartOffset: Point = { x: 0, y: 0 };
 let viewportScale = 1;
 let viewportZoom = 1;
 let viewportPan: Point = { x: 0, y: 0 };
+let activeSurface: CanvasSurface = 'solid';
+let solidBackgroundColor = '#000000';
 let touchCandidateCount = 0;
 let touchCandidateCanceled = false;
 const gestureMoveThreshold = 8;
@@ -115,7 +122,19 @@ function resizeCanvas(): void {
     : portraitMobile ? stage.clientHeight / CANVAS_HEIGHT : Math.min(stage.clientWidth / CANVAS_WIDTH, stage.clientHeight / CANVAS_HEIGHT);
   const displayWidth = CANVAS_WIDTH * viewportScale * viewportZoom;
   const displayHeight = CANVAS_HEIGHT * viewportScale * viewportZoom;
-  renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT, Math.min(window.devicePixelRatio || 1, 2), displayWidth, displayHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT, dpr, displayWidth, displayHeight);
+  for (const layer of [backgroundCanvas, foregroundCanvas]) {
+    layer.width = Math.max(1, Math.round(CANVAS_WIDTH * dpr));
+    layer.height = Math.max(1, Math.round(CANVAS_HEIGHT * dpr));
+    layer.style.width = `${displayWidth}px`; layer.style.height = `${displayHeight}px`;
+  }
+  const bg = backgroundCanvas.getContext('2d')!;
+  bg.setTransform(backgroundCanvas.width / CANVAS_WIDTH, 0, 0, backgroundCanvas.height / CANVAS_HEIGHT, 0, 0);
+  drawSurface(bg, activeSurface, solidBackgroundColor);
+  const fg = foregroundCanvas.getContext('2d')!;
+  fg.setTransform(foregroundCanvas.width / CANVAS_WIDTH, 0, 0, foregroundCanvas.height / CANVAS_HEIGHT, 0, 0);
+  drawForeground(fg, activeSurface);
   clampViewportPan();
   stage.style.setProperty('--canvas-pan-x', `${viewportPan.x}px`);
   stage.style.setProperty('--canvas-pan-y', `${viewportPan.y}px`);
@@ -205,6 +224,10 @@ canvas.addEventListener('pointermove', (event) => {
       };
       clampViewportPan();
       renderer.setDisplaySize(CANVAS_WIDTH * viewportScale * viewportZoom, CANVAS_HEIGHT * viewportScale * viewportZoom);
+      backgroundCanvas.style.width = `${CANVAS_WIDTH * viewportScale * viewportZoom}px`;
+      backgroundCanvas.style.height = `${CANVAS_HEIGHT * viewportScale * viewportZoom}px`;
+      foregroundCanvas.style.width = backgroundCanvas.style.width;
+      foregroundCanvas.style.height = backgroundCanvas.style.height;
       stage.style.setProperty('--canvas-pan-x', `${viewportPan.x}px`); stage.style.setProperty('--canvas-pan-y', `${viewportPan.y}px`);
       return;
     }
@@ -355,6 +378,7 @@ const brushColorKey = 'tagbox.brush-color';
 const brushMaterialKey = 'tagbox.brush-material';
 const savedColorsKey = 'tagbox.saved-colors';
 const backgroundColorKey = 'tagbox.canvas-background';
+const surfaceKey = 'tagbox.canvas-surface';
 const validColor = (color: string): boolean => /^#[0-9a-f]{6}$/i.test(color);
 function readSavedColors(): string[] {
   try {
@@ -444,14 +468,57 @@ function setBackgroundColor(color: string): void {
   color = color.toLowerCase();
   backgroundInput.value = color;
   document.querySelector<HTMLElement>('.background-color-swatch')!.style.backgroundColor = backgroundInput.value;
-  renderer.setBackgroundColor(color);
+  solidBackgroundColor = color;
+  const ctx = backgroundCanvas.getContext('2d');
+  if (ctx) { ctx.setTransform(backgroundCanvas.width / CANVAS_WIDTH, 0, 0, backgroundCanvas.height / CANVAS_HEIGHT, 0, 0); drawSurface(ctx, activeSurface, solidBackgroundColor); }
   try { localStorage.setItem(backgroundColorKey, color); } catch { /* Keep background changes usable when storage is disabled. */ }
 }
 try {
   const storedBackground = localStorage.getItem(backgroundColorKey);
-  setBackgroundColor(storedBackground && validColor(storedBackground) ? storedBackground : '#000000');
-} catch { setBackgroundColor('#000000'); }
+  solidBackgroundColor = storedBackground && validColor(storedBackground) ? storedBackground : '#000000';
+  setBackgroundColor(solidBackgroundColor);
+  const storedSurface = localStorage.getItem(surfaceKey);
+  if (storedSurface === 'concrete' || storedSurface === 'steel-gate') activeSurface = storedSurface;
+} catch { /* Use the default solid surface when storage is unavailable. */ }
+function updateSurface(): void {
+  surfacePicker.querySelectorAll<HTMLButtonElement>('.surface-option').forEach((button) => {
+    const selected = button.dataset.surface === activeSurface;
+    button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected));
+  });
+  const bg = backgroundCanvas.getContext('2d')!;
+  bg.setTransform(backgroundCanvas.width / CANVAS_WIDTH, 0, 0, backgroundCanvas.height / CANVAS_HEIGHT, 0, 0);
+  drawSurface(bg, activeSurface, solidBackgroundColor);
+  const fg = foregroundCanvas.getContext('2d')!;
+  fg.setTransform(foregroundCanvas.width / CANVAS_WIDTH, 0, 0, foregroundCanvas.height / CANVAS_HEIGHT, 0, 0);
+  drawForeground(fg, activeSurface);
+  renderer.setRunoffObstacles(getSurfaceObstacles(activeSurface));
+  try { localStorage.setItem(surfaceKey, activeSurface); } catch { /* Keep surface changes usable when storage is unavailable. */ }
+}
+surfacePicker.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.surface-option');
+  if (!button || (button.dataset.surface !== 'solid' && button.dataset.surface !== 'concrete' && button.dataset.surface !== 'steel-gate')) return;
+  if (button.dataset.surface === activeSurface) return;
+  clearCanvas();
+  activeSurface = button.dataset.surface;
+  updateSurface();
+});
+window.addEventListener('tagbox-surface-assets-ready', updateSurface);
+updateSurface();
 backgroundInput.addEventListener('input', () => setBackgroundColor(backgroundInput.value));
+
+document.querySelector<HTMLButtonElement>('#export-button')!.addEventListener('click', () => {
+  const output = document.createElement('canvas'); output.width = CANVAS_WIDTH; output.height = CANVAS_HEIGHT;
+  const ctx = output.getContext('2d')!;
+  ctx.drawImage(backgroundCanvas, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.drawImage(canvas, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.drawImage(foregroundCanvas, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  output.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = timestampedExportFilename(); link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 'image/png');
+});
 document.querySelectorAll<HTMLButtonElement>('.brush-shape-option').forEach((button) => button.addEventListener('click', () => {
   settings.shape = button.dataset.shape as typeof settings.shape;
   rotationGroup.hidden = settings.shape === 'round';
