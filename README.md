@@ -2,6 +2,8 @@
 
 Tagbox is a browser-based graffiti painting application built with TypeScript, Vite and WebGL2.
 
+Current release: **v0.8.1**.
+
 **Live application:** [tagbox.kebabstugan.com](https://tagbox.kebabstugan.com)
 
 ## Features
@@ -14,12 +16,14 @@ Tagbox is a browser-based graffiti painting application built with TypeScript, V
 - Undo and clear-canvas controls, including Ctrl+Z and Cmd+Z shortcuts.
 - On touchscreens that expose individual contacts, a stationary two-finger press and release undoes the last stroke; three fingers clear the canvas. Movement cancels either gesture.
 - A Help button opens a quick guide to drawing, gestures and controls.
+- The Help guide includes a link to the [Tagbox source code on GitHub](https://github.com/plutonium87/tagbox).
+- Export PNG downloads the current canvas as a timestamped PNG image.
 - Fullscreen mode. Desktop keeps the existing workspace layout; mobile fullscreen covers the viewport and supports pinch zoom and panning.
 
 ## Controls and settings
 
 - Brush Size ranges from 2 to 50 logical pixels (default 10). Stroke Smoothing ranges from 0% to 100% (default 50%), Paint Load from 0% to 100% (default 68%), and Run Intensity from 0% to 100% (default 58%).
-- The rotation dial controls Square, Chisel and Split Chisel tips from 0° to 360°. Square starts at 0°; Chisel and Split Chisel start at 30°. Arrow keys adjust by 1° (Shift+Arrow by 5°); Home and End select the endpoints.
+- The rotation dial controls Square, Chisel and Split Chisel tips from 0° to 360°. Square starts at 0°; Chisel and Split Chisel start at 140°. Arrow keys adjust by 1° (Shift+Arrow by 5°); Home and End select the endpoints.
 - Selecting a paint color activates Paint; selecting a Chrome material activates that material. Chrome uses its built-in material tint rather than the selected paint color.
 - Brush color, selected material, saved colors, canvas background and Paint Splatter enabled state persist in the browser. Brush size, smoothing, Paint Load, Run Intensity, brush tip and tip rotation reset when the page reloads.
 - Use Undo Stroke or Ctrl+Z / Cmd+Z to undo one stroke. Clear removes the current artwork. Select Fullscreen to enter when supported; press Esc or select Exit fullscreen to leave.
@@ -112,7 +116,7 @@ The Cloudflare Tunnel is external to this repository and is not started or confi
 
 ## Browser support and limitations
 
-Tagbox requires a browser with WebGL2 enabled. Fullscreen and screen-orientation controls depend on browser and device support; the fullscreen layout remains available when orientation locking is unavailable. Artwork is held in memory for the current page session; there is no document save, load or export feature. Very large artworks retain stroke and runoff geometry for redraw and undo, so memory use and rendering cost can increase as artwork grows.
+Tagbox requires a browser with WebGL2 enabled. Fullscreen and screen-orientation controls depend on browser and device support; the fullscreen layout remains available when orientation locking is unavailable. Artwork is held in memory for the current page session; projects cannot be saved or loaded. Brush size, shape and tip rotation reset when the page reloads, while saved colors, selected material, canvas background and Paint Splatter state retain their existing browser storage behavior. Very large artworks retain stroke and runoff geometry for redraw and undo, so memory use and rendering cost can increase as artwork grows.
 
 ## License
 

@@ -1,7 +1,7 @@
 import { PointerFilter, StrokeInterpolator } from './smoothing';
 import { clampBrushSize, type BrushShape, type Dab, type Material, type Point, type Stroke } from './settings';
 
-const DEFAULT_CHISEL_ROTATION_DEGREES = 30;
+const DEFAULT_CHISEL_ROTATION_DEGREES = 140;
 
 export class BrushEngine {
   private active: Stroke | null = null;

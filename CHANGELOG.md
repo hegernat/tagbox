@@ -2,6 +2,16 @@
 
 This project follows a Keep a Changelog-inspired format. Version numbers follow semantic versioning.
 
+## [0.8.1] - 2026-11-07
+
+### Added
+
+- Added a GitHub source code link at the bottom of the Help guide.
+
+### Changed
+
+- Set the default angle for Chisel and Split Chisel tips to 140°.
+
 ## [0.8.0] - 2026-11-06
 
 ### Added

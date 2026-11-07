@@ -39,7 +39,7 @@ const helpDialog = document.querySelector<HTMLDialogElement>('#help-dialog')!;
 const helpCloseButton = document.querySelector<HTMLButtonElement>('#help-close')!;
 const exitCanvasButton = document.querySelector<HTMLButtonElement>('#canvas-exit-button')!;
 const screenOrientation = screen.orientation as ScreenOrientation & { lock?: (orientation: 'landscape') => Promise<void> };
-const shapeRotations: Record<'square' | 'chisel' | 'split-chisel', number> = { square: 0, chisel: 30, 'split-chisel': 30 };
+const shapeRotations: Record<'square' | 'chisel' | 'split-chisel', number> = { square: 0, chisel: 140, 'split-chisel': 140 };
 let isDrawing = false;
 let holdTimer = 0;
 let activePointerId: number | null = null;
